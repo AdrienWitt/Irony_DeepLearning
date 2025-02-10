@@ -1,105 +1,145 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb  6 15:33:40 2025
-
-@author: adywi
-"""
-
+import os
+import time
+import argparse
 import numpy as np
 import pandas as pd
+from collections import Counter
 from sklearn.linear_model import Ridge
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV
-
-from scipy.stats import pearsonr
 from joblib import Parallel, delayed
-import os
+import dataset  # Assuming this is a custom module
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-# Load dataset
-import dataset  
+# Function to parse command-line arguments
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
+    
+    parser.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
+                        help="Size of fMRI images as three integers (default: 75 92 77).")
+    parser.add_argument("--mode", type=str, choices=["base_features", "audio_only", "text_only", "text_audio"], default="text_audio",
+                        help="Mode for dataset loading (default: base_features).")
+    parser.add_argument("--alpha_values", type=float, nargs='+', default=[1, 5, 10, 15, 20, 30, 50],
+                        help="List of alpha values for Ridge regression (default: [1, 5, 10, 15, 20, 30, 50]).")
+    parser.add_argument("--num_jobs", type=int, default=20,
+                        help="Number of parallel jobs for computation (default: 20).")
+    
+    return parser.parse_args()
 
-# Paths
-data_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\behavioral"
-fmri_data_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri"
-embeddings_text_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\embeddings\text\statements"
-embeddings_audio_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\embeddings\audio"
+# Function to set up paths dynamically
+def get_paths():
+    base_path = os.getcwd()  # Gets the working directory where the script is executed
 
-# fMRI image size
-img_size = (75, 92, 77)  
-voxel_list = list(np.ndindex(img_size))  
+    paths = {
+        "data_path": os.path.join(base_path, "data", "behavioral"),
+        "fmri_data_path": os.path.join(base_path, "data", "fmri"),
+        "embeddings_text_path": os.path.join(base_path, "embeddings", "text", "statements"),
+        "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
+        "results_path": os.path.join(base_path, "cv_results"),
+    }
 
-# Split participants into train and test sets
-participant_list = os.listdir(data_path)
-train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
+    # Create results directory if it doesn't exist
+    os.makedirs(paths["results_path"], exist_ok=True)
+    
+    return paths
 
-# Load dataset for training and testing
-database_train = dataset.BaseDataset(
-    participant_list=train_participants,
-    data_path=data_path,
-    fmri_data_path=fmri_data_path,
-    img_size=img_size,
-    embeddings_text_path=embeddings_text_path, embeddings_audio_path=embeddings_audio_path, mode = "text_audio"
-)
+# Function to ensure a unique filename by appending a number if needed
+def get_unique_filename(base_path, filename):
+    name, ext = os.path.splitext(filename)
+    counter = 1
+    new_filename = filename
 
+    while os.path.exists(os.path.join(base_path, new_filename)):
+        new_filename = f"{name}_{counter}{ext}"
+        counter += 1
 
-# Define file path to save top voxels
-top_voxels_path = "top10_voxels.csv"
+    return os.path.join(base_path, new_filename)
 
-if os.path.exists(top_voxels_path):
-    # Load top voxels from file
-    df_voxels = pd.read_csv(top_voxels_path)
-    top_voxels = [tuple(x) for x in df_voxels.to_records(index=False)]
-    print(f"Loaded {len(top_voxels)} voxels from {top_voxels_path}")
-else:
-    # Compute mean activation per voxel
-    mean_activation = {voxel: np.mean(database_train.get_voxel_values(voxel)["fmri_value"].values) for voxel in voxel_list}
+# Function to load dataset and split participants
+def load_datasets(paths, img_size, mode):
+    participant_list = os.listdir(paths["data_path"])
+    train_participants, _ = train_test_split(participant_list, test_size=0.2, random_state=42)
 
-    # Compute threshold for top 10% of voxels
-    threshold = np.percentile(list(mean_activation.values()), 90)  # 90th percentile
+    database_train = dataset.BaseDataset(
+        participant_list=train_participants,
+        data_path=paths["data_path"],
+        fmri_data_path=paths["fmri_data_path"],
+        img_size=img_size,
+        embeddings_text_path=paths["embeddings_text_path"],
+        embeddings_audio_path=paths["embeddings_audio_path"],
+        mode=mode
+    )
 
-    # Select voxels with mean activation above threshold
-    top_voxels = [voxel for voxel, activation in mean_activation.items() if activation >= threshold]
+    return database_train
 
-    # Save the top voxels
-    df_voxels = pd.DataFrame(top_voxels, columns=["X", "Y", "Z"])
-    df_voxels.to_csv(top_voxels_path, index=False)
+# Function to get top 10% most activated voxels
+def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
+    if os.path.exists(top_voxels_path):
+        df_voxels = pd.read_csv(top_voxels_path)
+        top_voxels = [tuple(x) for x in df_voxels.to_records(index=False)]
+        print(f"Loaded {len(top_voxels)} voxels from {top_voxels_path}")
+    else:
+        mean_activation = {voxel: np.mean(database_train.get_voxel_values(voxel)["fmri_value"].values) for voxel in voxel_list}
+        threshold = np.percentile(list(mean_activation.values()), 90)
+        top_voxels = [voxel for voxel, activation in mean_activation.items() if activation >= threshold]
+        
+        df_voxels = pd.DataFrame(top_voxels, columns=["X", "Y", "Z"])
+        df_voxels.to_csv(top_voxels_path, index=False)
+        print(f"Computed and saved {len(top_voxels)} top voxels to {top_voxels_path}")
 
-    print(f"Computed and saved {len(top_voxels)} top voxels to {top_voxels_path}")
+    return top_voxels
 
-
-alpha_values = [.001, .01, .1, 1, 5, 10, 15, 20] 
-
-
-def voxel_analysis(voxel):
-    """Train Ridge regression with CV, find best alpha, and compute correlation."""
+# Function to perform voxel-wise Ridge regression with cross-validation
+def cv(voxel, database_train, alpha_values):
     df_train = database_train.get_voxel_values(voxel)
     X_train = df_train.drop(columns=["fmri_value"]).values
     y_train = df_train["fmri_value"].values  
 
-    
-    # Standardize features
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-
-    # GridSearchCV to tune alpha
     ridge = Ridge()
     param_grid = {'alpha': alpha_values}
     grid_search = GridSearchCV(ridge, param_grid, cv=5, scoring='r2')
     grid_search.fit(X_train, y_train)
 
-    # Get best model and alpha
     best_alpha = grid_search.best_params_['alpha']
-    best_ridge = grid_search.best_estimator_
-
     return voxel, best_alpha
 
-# Parallel processing for top 10 voxels
-num_jobs = -1  # Use all CPU cores
-results = Parallel(n_jobs=num_jobs)(delayed(voxel_analysis)(voxel) for voxel in top_voxels)
+# Main function
+def main():
+    start_time = time.time()
 
-results_path = "best_alphas.csv"
+    args = parse_arguments()
+    img_size = tuple(args.img_size)
+    mode = args.mode
+    alpha_values = args.alpha_values
+    num_jobs = args.num_jobs  # Get the number of parallel jobs from command line
+    print(f"Running with image size: {img_size}, mode: {mode}")
+    print(f"Alpha values: {alpha_values}")
+    print(f"Using {num_jobs} parallel jobs for computation.")
 
-df_results = pd.DataFrame(results, columns=["Voxel", "Best_Alpha", "Correlation"])
-df_results.to_csv(results_path, index=False)
-print(f"Best alpha values saved to {results_path}!")
+    paths = get_paths()
+    database_train = load_datasets(paths, img_size, mode)
+
+    voxel_list = list(np.ndindex(img_size))
+    top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
+    top_voxels = get_top_voxels(database_train, img_size, voxel_list, top_voxels_path)
+    print(f"Using {len(top_voxels)} top voxels for analysis.")
+
+    results = Parallel(n_jobs=num_jobs)(
+        delayed(cv)(voxel, database_train, alpha_values) for voxel in top_voxels
+    )
+
+    best_alphas = [result[1] for result in results]
+    most_common_alpha = Counter(best_alphas).most_common(1)[0][0]
+    print(f"Most common best alpha across top voxels: {most_common_alpha}")
+
+    # Get unique filename to avoid overwriting
+    unique_results_path = get_unique_filename(paths["results_path"], "best_alphas.csv")
+
+    df_results = pd.DataFrame(results, columns=["Voxel", "Best_Alpha"])
+    df_results.to_csv(unique_results_path, index=False)
+    print(f"Best alpha values saved to {unique_results_path}!")
+
+    elapsed_time = time.time() - start_time
+    print(f"Total execution time: {elapsed_time:.2f} seconds")
+
+# Run the script
+if __name__ == "__main__":
+    main()

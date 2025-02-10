@@ -1,23 +1,23 @@
 import os
 import time
+import psutil
 import argparse
 import numpy as np
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr
-from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
+from sklearn.model_selection import train_test_split
 
-# Function to parse command-line arguments
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
-    
-    parser.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
-                        help="Size of fMRI images as three integers (default: 75 92 77).")
-    parser.add_argument("--mode", type=str, choices=["base_features", "audio_only", "text_only", "text_audio"], default="base_features",
-                        help="Mode for dataset loading (default: base_features).")
-    
-    return parser.parse_args()
+# Function to get memory usage
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    return memory_info.rss  # returns RSS in bytes
+
+# Function to get CPU usage
+def get_cpu_usage():
+    return psutil.cpu_percent(interval=1)  # returns CPU usage as a percentage
+
 
 # Function to set up paths dynamically
 def get_paths():
@@ -83,49 +83,46 @@ def voxel_analysis(voxel, database_train, database_test):
     return voxel, correlation
 
 # Main function
-def main():
+def main(database_train, database_test):
     start_time = time.time()  # Start timing
 
-    args = parse_arguments()
-    img_size = tuple(args.img_size)  # Convert list to tuple
-    mode = args.mode
+    # Initial resource usage
+    initial_memory = get_memory_usage()
+    initial_cpu = get_cpu_usage()
+    print(f"Initial memory usage: {initial_memory / (1024 ** 2):.2f} MB")
+    print(f"Initial CPU usage: {initial_cpu}%")
 
     print(f"Running with image size: {img_size}, mode: {mode}")
 
-    paths = get_paths()
-    database_train, database_test = load_datasets(paths, img_size, mode)
 
-    # Generate voxel list dynamically
-    voxel_list = list(np.ndindex(img_size))  
+    voxel_list = list(np.ndindex(img_size))
+    voxel = voxel_list[255000]
 
-    # Initialize correlation map
-    correlation_map = np.zeros(img_size)
+    # Before processing the voxel, track memory and CPU usage
+    memory_before = get_memory_usage()
+    cpu_before = get_cpu_usage()
+    print(f"Memory usage before voxel processing: {memory_before / (1024 ** 2):.2f} MB")
+    print(f"CPU usage before voxel processing: {cpu_before}%")
 
-    # Parallel processing for all voxels
-    num_jobs = -1  # Use all CPU cores
-    results = Parallel(n_jobs=num_jobs)(
-        delayed(voxel_analysis)(voxel, database_train, database_test) for voxel in voxel_list
-    )
+    result = voxel_analysis(voxel, database_train, database_test)
 
-    # Store correlations and update the fMRI-sized array
-    correlations = []  # List to store correlation values
-    for voxel, corr in results:
-        correlation_map[voxel] = corr
-        correlations.append(corr)  # Collect correlations for mean calculation
+    # After processing the voxel, track memory and CPU usage again
+    memory_after = get_memory_usage()
+    cpu_after = get_cpu_usage()
+    print(f"Memory usage after voxel processing: {memory_after / (1024 ** 2):.2f} MB")
+    print(f"CPU usage after voxel processing: {cpu_after}%")
 
-    # Compute the mean correlation
-    mean_correlation = np.mean(correlations)
-    print(f"Mean correlation: {mean_correlation:.4f}")
+    # Print the correlation result for the voxel
+    voxel, correlation = result
+    print(f"Voxel {voxel} correlation: {correlation:.4f}")
 
-    # Save the correlation map
-    result_file = os.path.join(paths["results_path"], f"correlation_map_{mode}.npy")
-    np.save(result_file, correlation_map)
-
-    end_time = time.time()  # Stop timing
+    # Stop timing and calculate elapsed time
+    end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Correlation map saved as '{result_file}'")
-    print(f"Total execution time: {elapsed_time:.2f} seconds")
+    print(f"Total execution time for one voxel: {elapsed_time:.2f} seconds")
 
-# Run the script
-if __name__ == "__main__":
-    main()
+img_size = (75, 92, 77)
+mode = 'text_audio'
+paths = get_paths()
+database_train, database_test = load_datasets(paths, img_size, mode)
+main(database_train, database_test)

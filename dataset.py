@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 
 
 class BaseDataset(Dataset):
-    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(100, 100, 100), mode='text_only', **kwargs):
+    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), mode='base_features', **kwargs):
         super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path
@@ -114,7 +114,7 @@ class BaseDataset(Dataset):
         return base_data
         
     def set_data(self):
-        if self.mode in ['base_feature', 'text_only', 'audio_only', 'text_audio']:
+        if self.mode in ['base_features', 'text_only', 'audio_only', 'text_audio']:
             final_data = []
             embeddings_text_list = []
             embeddings_audio_list = []
@@ -136,6 +136,10 @@ class BaseDataset(Dataset):
             df.reset_index(drop=True, inplace=True)
             categorical_cols = df.columns[:4]  # First 4 columns are categorical
             df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
+            df["evaluation"] = df["evaluation"].fillna(df["evaluation"].median())
+
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
         
         if self.mode in ['text_only', 'text_audio']:
             df_pca_text = self.apply_pca(embeddings_text_list, n_components=22, prefix="pc_text")
@@ -152,10 +156,11 @@ class BaseDataset(Dataset):
         return df
 
     def get_voxel_values(self, voxel):
-        voxel_values = [item["fmri_data"][voxel] for item in self.base_data]
-        self.data["fmri_value"] = voxel_values
-        return self.data
-        
+          voxel_values = []        
+          for item in self.base_data:
+              voxel_values.append(item["fmri_data"][voxel])
+          self.data["fmri_value"] = voxel_values
+          return self.data
 
     def get_max_image_size(self):
         """Determines the maximum size for x, y, and z dimensions across all images."""

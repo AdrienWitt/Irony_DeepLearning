@@ -161,9 +161,9 @@ for file_type in files_type:
                subj_dir = os.path.join(output_dir_fmri, participant)
                if not os.path.exists(subj_dir):
                    os.makedirs(subj_dir)
-               nib.save(file_context, os.path.join(subj_dir,filename_context +".nii.gz"))
+               #nib.save(file_context, os.path.join(subj_dir,filename_context +".nii.gz"))
                nib.save(file_statement, os.path.join(subj_dir,filename_statement +".nii.gz"))
-               nib.save(file_jitter, os.path.join(subj_dir,filename_jitter +".nii.gz"))
+               #nib.save(file_jitter, os.path.join(subj_dir,filename_jitter +".nii.gz"))
                
      
 

@@ -5,16 +5,8 @@ Created on Mon Dec  9 13:58:33 2024
 @author: adywi
 """
 
-from transformers import GPT2Tokenizer, GPT2Model, Wav2Vec2Model, AutoTokenizer, AutoModel, AutoModelForMaskedLM
-from sklearn.decomposition import PCA
-import numpy as np
 import os
 import pandas as pd
-from pydub import AudioSegment
-import re
-import unidecode
-import whisper
-from collections import defaultdict
 import librosa
 
 def load_dataframe(participant_path):
@@ -46,7 +38,7 @@ def text_embeddings(text_file, tokenizer_text, model_text):
     return outputs, tokens
 
 def audio_embeddings(audio_fie, processor, model_audio):
-    audio, sampling_rate = librosa.load(audio_path, sr=16000)
+    audio, sampling_rate = librosa.load(audio_fie, sr=16000)
 
 def pad_back_forward(length, desired_length):
     """Calculates the padding needed for back and forward dimensions."""
