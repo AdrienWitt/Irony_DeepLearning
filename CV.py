@@ -9,19 +9,30 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
 
-# Function to parse command-line arguments
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
-    
-    parser.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
-                        help="Size of fMRI images as three integers (default: 75 92 77).")
-    parser.add_argument("--mode", type=str, choices=["base_features", "audio_only", "text_only", "text_audio"], default="text_audio",
-                        help="Mode for dataset loading (default: base_features).")
-    parser.add_argument("--alpha_values", type=float, nargs='+', default=[1, 5, 10, 15, 20, 30, 50],
+
+    # **Dataset-related arguments**
+    dataset_group = parser.add_argument_group("Dataset Arguments")
+    dataset_group.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
+                               help="Size of fMRI images as three integers (default: 75 92 77).")
+    dataset_group.add_argument("--mode", type=str, choices=["base_features", "audio", "text", "text_audio"], 
+                               default="base_features", help="Mode for dataset loading (default: base_features).")
+    dataset_group.add_argument("--use_base_features", action="store_true", 
+                               help="Include base features in dataset (default: False).")
+    dataset_group.add_argument("--n_component_text", type=int, default=22, 
+                               help="Number of PCA components for text embeddings (default: 22).")
+    dataset_group.add_argument("--n_component_audio", type=int, default=217, 
+                               help="Number of PCA components for audio embeddings (default: 217).")
+
+    # **Analysis-related arguments**
+    analysis_group = parser.add_argument_group("Analysis Arguments")
+    analysis_group.add_argument("--alpha_values", type=float, nargs='+', default=[1, 5, 10, 15, 20, 30, 50],
                         help="List of alpha values for Ridge regression (default: [1, 5, 10, 15, 20, 30, 50]).")
-    parser.add_argument("--num_jobs", type=int, default=20,
-                        help="Number of parallel jobs for computation (default: 20).")
-    
+    analysis_group.add_argument("--num_jobs", type=int, default=20,
+                                help="Number of parallel jobs for voxel processing (default: -1 for all cores).")
+
     return parser.parse_args()
 
 # Function to set up paths dynamically
@@ -54,19 +65,24 @@ def get_unique_filename(base_path, filename):
     return os.path.join(base_path, new_filename)
 
 # Function to load dataset and split participants
-def load_datasets(paths, img_size, mode):
+def load_dataset(args, paths):
+    """Loads the dataset using parsed arguments."""
     participant_list = os.listdir(paths["data_path"])
-    train_participants, _ = train_test_split(participant_list, test_size=0.2, random_state=42)
+    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
 
-    database_train = dataset.BaseDataset(
-        participant_list=train_participants,
-        data_path=paths["data_path"],
-        fmri_data_path=paths["fmri_data_path"],
-        img_size=img_size,
-        embeddings_text_path=paths["embeddings_text_path"],
-        embeddings_audio_path=paths["embeddings_audio_path"],
-        mode=mode
-    )
+    dataset_args = {
+        "data_path": paths["data_path"],
+        "fmri_data_path": paths["fmri_data_path"],
+        "img_size": tuple(args.img_size),
+        "embeddings_text_path": paths["embeddings_text_path"],
+        "embeddings_audio_path": paths["embeddings_audio_path"],
+        "mode": args.mode,
+        "use_base_features": args.use_base_features,
+        "n_component_text": args.n_component_text,
+        "n_component_audio": args.n_component_audio
+    }
+
+    database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
 
     return database_train
 
@@ -115,7 +131,7 @@ def main():
     print(f"Using {num_jobs} parallel jobs for computation.")
 
     paths = get_paths()
-    database_train = load_datasets(paths, img_size, mode)
+    database_train = load_dataset(args, paths)
 
     voxel_list = list(np.ndindex(img_size))
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")

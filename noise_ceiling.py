@@ -16,17 +16,6 @@ from scipy.stats import pearsonr
 from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
 
-# Function to parse command-line arguments
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
-    
-    parser.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
-                        help="Size of fMRI images as three integers (default: 75 92 77).")
-    parser.add_argument("--mode", type=str, choices=["base_features", "audio_only"], default="base_features",
-                        help="Mode for dataset loading (default: base_features).")
-    
-    return parser.parse_args()
-
 # Function to set up paths dynamically
 def get_paths():
     base_path = os.getcwd()  # Gets the working directory where the script is executed
@@ -36,7 +25,7 @@ def get_paths():
         "fmri_data_path": os.path.join(base_path, "data", "fmri"),
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text", "statements"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "noise_ceiling": os.path.join(base_path, "results"),
+        "results_path": os.path.join(base_path, "results"),
     }
 
     # Create results directory if it doesn't exist
@@ -70,5 +59,54 @@ def load_datasets(paths, img_size, mode):
     )
 
     return database_train, database_test
+
+def compute_correlation(y_1, y_2):
+    """
+    Compute Pearson correlation between two arrays.
+    """
+    if np.std(y_1) > 0 and np.std(y_2) > 0:
+        return pearsonr(y_1, y_2)[0]
+    else:
+        return 0  # Return 0 if there's no variance in either array
+
+
+def get_voxel_values(voxel, base_data):
+    voxel_values = []
+    filtered_data_list = []  # Stores dictionaries without "fmri_data"
+
+    for item in base_data:
+        voxel_values.append(item["fmri_data"][voxel])  # Extract voxel value
+        filtered_data = {k: v for k, v in item.items() if k != "fmri_data"}  
+        filtered_data_list.append(filtered_data)  
+
+    # Convert filtered data to DataFrame
+    df = pd.DataFrame(filtered_data_list)
+    df["voxel_value"] = voxel_values  # Add voxel values as a new column
+    
+    return df
+
+# Main function
+img_size = (75, 92, 77)
+mode = "base_features"
+voxel_list = list(np.ndindex(img_size))  
+paths = get_paths()
+database_train, database_test = load_datasets(paths, img_size, mode)
+base_data1 = database_train.base_data
+a = base_data1[1:4]
+filtered_data = {k: v for k, v in a.items() if k not in "fmri_data"}
+voxel = voxel_list[222222]
+base_data = get_voxel_values(voxel, base_data1)
+
+
+noise_map = np.zeros(img_size)
+for voxel in voxel_list:
+    df_1 = database_train.get_voxel_values(voxel)
+    df_2 = database_test.get_voxel_values(voxel)
+    y_1 = df_1["fmri_value"].values
+    y_2 = df_2["fmri_value"].values
+    
+result_file = os.path.join(paths["results_path"], f"noise_ceiling.npy")
+
+    
 
 
