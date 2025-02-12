@@ -6,7 +6,7 @@ from sklearn.linear_model import Ridge
 from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr
 from joblib import Parallel, delayed
-import dataset  # Assuming this is a custom module
+import dataset  
 
 os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 args = argparse.Namespace(
@@ -85,7 +85,7 @@ def load_dataset(args, paths):
     return database_train, database_test
 
 # Function to perform voxel-wise Ridge regression
-def voxel_analysis(voxel, database_train, database_test):
+def voxel_analysis(voxel, database_train, database_test, alpha):
     """Train Ridge regression and compute correlation for a given voxel."""
     df_train = database_train.get_voxel_values(voxel)
     df_train = df_train.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -96,7 +96,7 @@ def voxel_analysis(voxel, database_train, database_test):
     X_test = df_test.drop(columns=["fmri_value"]).values
     y_test = df_test["fmri_value"].values  
 
-    ridge = Ridge(alpha=1.0)
+    ridge = Ridge(alpha=alpha)
     ridge.fit(X_train, y_train)
     y_pred = ridge.predict(X_test)
 
@@ -129,7 +129,7 @@ def main():
 
     # Parallel processing for all voxels
     results = Parallel(n_jobs=args.num_jobs)(
-        delayed(voxel_analysis)(voxel, database_train, database_test) for voxel in voxel_list
+        delayed(voxel_analysis)(voxel, database_train, database_test, args.alpha) for voxel in voxel_list
     )
 
     # Store correlations and update the fMRI-sized array

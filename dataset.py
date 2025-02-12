@@ -15,8 +15,6 @@ import nibabel as nib
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-
-
 class BaseDataset(Dataset):
     def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), mode='base_features', **kwargs):
         super().__init__()
@@ -116,7 +114,7 @@ class BaseDataset(Dataset):
         return base_data
     
 
-    def set_data(self):  # Added a flag to control base feature inclusion
+    def set_data(self):
         if self.mode in ['base_features', 'text', 'audio', 'text_audio']:
             final_data = []
             embeddings_text_list = []
@@ -134,7 +132,9 @@ class BaseDataset(Dataset):
                     final_data.append({
                         "context": context, "semantic": semantic, "prosody": prosody, 
                         "task": task, "evaluation": evaluation, "fmri_value": fmri_value
-                    })
+                    })  
+                else:
+                    final_data.append({"fmri_value": fmri_value})
     
                 embeddings_text = np.load(os.path.join(self.embeddings_text_path, f"{semantic}_{item['situation']}_CLS.npy"))
                 embeddings_text_list.append(embeddings_text)
@@ -149,7 +149,7 @@ class BaseDataset(Dataset):
                 df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
                 df["evaluation"] = df["evaluation"].fillna(df["evaluation"].median())
             else:
-                df = pd.DataFrame()  # Start with an empty dataframe if base features are not used
+                df = pd.DataFrame(final_data)
     
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
@@ -157,26 +157,25 @@ class BaseDataset(Dataset):
         # PCA for text embeddings
         if self.mode in ['text', 'text_audio']:
             df_pca_text = self.apply_pca(embeddings_text_list, self.n_components_text, prefix="pc_text")
-            df = pd.concat([df, df_pca_text], axis=1) if not df.empty else df_pca_text
+            df = pd.concat([df, df_pca_text], axis=1)
             embedding_cols = [col for col in df.columns if col.startswith("pc_text_")]
             df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
     
         # PCA for audio embeddings
         if self.mode in ['audio', 'text_audio']:
             df_pca_audio = self.apply_pca(embeddings_audio_list, self.n_components_audio, prefix="pc_audio")
-            df = pd.concat([df, df_pca_audio], axis=1) if not df.empty else df_pca_audio
+            df = pd.concat([df, df_pca_audio], axis=1)
             embedding_cols = [col for col in df.columns if col.startswith("pc_audio_")]
             df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
     
         return df
 
-
     def get_voxel_values(self, voxel):
-          voxel_values = []        
-          for item in self.base_data:
-              voxel_values.append(item["fmri_data"][voxel])
-          self.data["fmri_value"] = voxel_values
-          return self.data
+        voxel_values = []        
+        for item in self.base_data:
+            voxel_values.append(item["fmri_data"][voxel])
+        self.data["fmri_value"] = voxel_values
+        return self.data
 
     def get_max_image_size(self):
         """Determines the maximum size for x, y, and z dimensions across all images."""
@@ -207,10 +206,7 @@ class BaseDataset(Dataset):
             
     
     def __getitem__(self, index):
-        """
-        Returns a single row from the base dataset (useful for debugging or single access).
-        """
-        return self.final_data[index]
+        return self.data[index]
 
     def __len__(self):
         return len(self.data)

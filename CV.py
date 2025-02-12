@@ -126,9 +126,14 @@ def main():
     mode = args.mode
     alpha_values = args.alpha_values
     num_jobs = args.num_jobs  # Get the number of parallel jobs from command line
-    print(f"Running with image size: {img_size}, mode: {mode}")
-    print(f"Alpha values: {alpha_values}")
-    print(f"Using {num_jobs} parallel jobs for computation.")
+    print(f"Running with settings:\n"
+    f"- Image size: {args.img_size}\n"
+    f"- Mode: {args.mode}\n"
+    f"- Use base features: {args.use_base_features}\n"
+    f"- n_component_text: {args.n_component_text}\n"
+    f"- n_component_audio: {args.n_component_audio}\n"
+    f"- Ridge alpha: {args.alpha}\n"
+    f"- Number of parallel jobs: {args.num_jobs}")
 
     paths = get_paths()
     database_train = load_dataset(args, paths)
