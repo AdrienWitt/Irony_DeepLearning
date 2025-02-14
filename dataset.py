@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 class BaseDataset(Dataset):
-    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), mode='base_features', **kwargs):
+    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), mode='base_features', pca_threshold = 0.95, **kwargs):
         super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path
@@ -25,8 +25,7 @@ class BaseDataset(Dataset):
         self.mode = mode
         self.register_args(**kwargs)
         self.scaler = StandardScaler()
-        self.n_components_text=22
-        self.n_components_audio=217
+        self.pca_threshold = pca_threshold
         self.base_data = self.create_base_data()
         self.data = self.set_data()
 
@@ -66,12 +65,16 @@ class BaseDataset(Dataset):
         img_padded = self.pad_to_max(img)
         return img_padded
     
-    def apply_pca(self, embeddings_list, n_components, prefix):
+    def apply_pca(self, embeddings_list, prefix):
         """Applies PCA transformation to embeddings."""
         embeddings_df = pd.DataFrame(np.vstack(embeddings_list))
-        pca = PCA(n_components=n_components)
-        embeddings_pca = pca.fit_transform(embeddings_df)
-        return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(n_components)])
+        pca = PCA()
+        pca.fit(embeddings_df)        
+        cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+        num_components = np.searchsorted(cumulative_variance, self.pca_threshold) + 1
+        pca = PCA(n_components=num_components)
+        embeddings_pca = pca.fit_transform(embeddings_df)        
+        return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(num_components)])
 
     def create_base_data(self):
         """Sets up the data by loading and processing fMRI data."""
@@ -156,14 +159,14 @@ class BaseDataset(Dataset):
     
         # PCA for text embeddings
         if self.mode in ['text', 'text_audio']:
-            df_pca_text = self.apply_pca(embeddings_text_list, self.n_components_text, prefix="pc_text")
+            df_pca_text = self.apply_pca(embeddings_text_list, prefix="pc_text")
             df = pd.concat([df, df_pca_text], axis=1)
             embedding_cols = [col for col in df.columns if col.startswith("pc_text_")]
             df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
     
         # PCA for audio embeddings
         if self.mode in ['audio', 'text_audio']:
-            df_pca_audio = self.apply_pca(embeddings_audio_list, self.n_components_audio, prefix="pc_audio")
+            df_pca_audio = self.apply_pca(embeddings_audio_list, prefix="pc_audio")
             df = pd.concat([df, df_pca_audio], axis=1)
             embedding_cols = [col for col in df.columns if col.startswith("pc_audio_")]
             df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])

@@ -5,10 +5,9 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
 from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
-
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
@@ -21,21 +20,20 @@ def parse_arguments():
                                default="base_features", help="Mode for dataset loading (default: base_features).")
     dataset_group.add_argument("--use_base_features", action="store_true", 
                                help="Include base features in dataset (default: False).")
-    dataset_group.add_argument("--n_component_text", type=int, default=22, 
-                               help="Number of PCA components for text embeddings (default: 22).")
-    dataset_group.add_argument("--n_component_audio", type=int, default=217, 
-                               help="Number of PCA components for audio embeddings (default: 217).")
+    dataset_group.add_argument("--pca_threshold", type=float, nargs='+', default=[0.70, 0.80, 0.90],
+                           help="List of explained variance thresholds for text PCA (default: [0.90, 0.95, 0.99]).")
 
     # **Analysis-related arguments**
     analysis_group = parser.add_argument_group("Analysis Arguments")
-    analysis_group.add_argument("--alpha_values", type=float, nargs='+', default=[1, 5, 10, 15, 20, 30, 50],
-                        help="List of alpha values for Ridge regression (default: [1, 5, 10, 15, 20, 30, 50]).")
+    analysis_group.add_argument("--alpha_values", type=float, nargs='+', default=[1, 10, 100],
+                        help="List of alpha values for Ridge regression (default: [1, 10, 100]).")
     analysis_group.add_argument("--num_jobs", type=int, default=20,
                                 help="Number of parallel jobs for voxel processing (default: -1 for all cores).")
+    analysis_group.add_argument("--optimize_pca_threshold", action="store_true",
+                                help="Optimize PCA threshold using cross-validation (default: False).")
 
     return parser.parse_args()
 
-# Function to set up paths dynamically
 def get_paths():
     base_path = os.getcwd()  # Gets the working directory where the script is executed
 
@@ -52,7 +50,6 @@ def get_paths():
     
     return paths
 
-# Function to ensure a unique filename by appending a number if needed
 def get_unique_filename(base_path, filename):
     name, ext = os.path.splitext(filename)
     counter = 1
@@ -64,7 +61,6 @@ def get_unique_filename(base_path, filename):
 
     return os.path.join(base_path, new_filename)
 
-# Function to load dataset and split participants
 def load_dataset(args, paths):
     """Loads the dataset using parsed arguments."""
     participant_list = os.listdir(paths["data_path"])
@@ -78,15 +74,14 @@ def load_dataset(args, paths):
         "embeddings_audio_path": paths["embeddings_audio_path"],
         "mode": args.mode,
         "use_base_features": args.use_base_features,
-        "n_component_text": args.n_component_text,
-        "n_component_audio": args.n_component_audio
+        "pca_threshold": args.pca_threshold,
+        "optimize_pca_threshold": args.optimize_pca_threshold
     }
 
     database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
 
     return database_train
 
-# Function to get top 10% most activated voxels
 def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
     if os.path.exists(top_voxels_path):
         df_voxels = pd.read_csv(top_voxels_path)
@@ -103,21 +98,40 @@ def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
 
     return top_voxels
 
-# Function to perform voxel-wise Ridge regression with cross-validation
-def cv(voxel, database_train, alpha_values):
+def nested_cv(voxel, database_train, alpha_values, pca_thresholds):
     df_train = database_train.get_voxel_values(voxel)
     X_train = df_train.drop(columns=["fmri_value"]).values
     y_train = df_train["fmri_value"].values  
 
-    ridge = Ridge()
-    param_grid = {'alpha': alpha_values}
-    grid_search = GridSearchCV(ridge, param_grid, cv=5, scoring='r2')
-    grid_search.fit(X_train, y_train)
+    outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
+    inner_cv = KFold(n_splits=3, shuffle=True, random_state=42)
 
-    best_alpha = grid_search.best_params_['alpha']
-    return voxel, best_alpha
+    best_scores = []
+    best_params = []
 
-# Main function
+    for pca_threshold in pca_thresholds:
+        # Update PCA threshold in the dataset
+        database_train.update_pca_threshold(pca_threshold)
+
+        ridge = Ridge()
+        param_grid = {'alpha': alpha_values}
+        grid_search = GridSearchCV(ridge, param_grid, cv=inner_cv, scoring='r2')
+
+        # Outer CV loop
+        for train_idx, val_idx in outer_cv.split(X_train):
+            X_train_fold, X_val_fold = X_train[train_idx], X_train[val_idx]
+            y_train_fold, y_val_fold = y_train[train_idx], y_train[val_idx]
+
+            grid_search.fit(X_train_fold, y_train_fold)
+            best_scores.append(grid_search.best_score_)
+            best_params.append((pca_threshold, grid_search.best_params_['alpha']))
+
+    # Find the best combination of PCA threshold and alpha
+    best_idx = np.argmax(best_scores)
+    best_pca_threshold, best_alpha = best_params[best_idx]
+
+    return voxel, best_pca_threshold, best_alpha
+
 def main():
     start_time = time.time()
 
@@ -125,13 +139,13 @@ def main():
     img_size = tuple(args.img_size)
     mode = args.mode
     alpha_values = args.alpha_values
+    pca_thresholds = args.pca_threshold
     num_jobs = args.num_jobs  # Get the number of parallel jobs from command line
     print(f"Running with settings:\n"
     f"- Image size: {args.img_size}\n"
     f"- Mode: {args.mode}\n"
     f"- Use base features: {args.use_base_features}\n"
-    f"- n_component_text: {args.n_component_text}\n"
-    f"- n_component_audio: {args.n_component_audio}\n"
+    f"- PCA thresholds: {args.pca_threshold}\n"
     f"- Ridge alpha: {args.alpha_values}\n"
     f"- Number of parallel jobs: {args.num_jobs}")
 
@@ -144,23 +158,26 @@ def main():
     print(f"Using {len(top_voxels)} top voxels for analysis.")
 
     results = Parallel(n_jobs=num_jobs)(
-        delayed(cv)(voxel, database_train, alpha_values) for voxel in top_voxels
+        delayed(nested_cv)(voxel, database_train, alpha_values, pca_thresholds) for voxel in top_voxels
     )
 
-    best_alphas = [result[1] for result in results]
+    best_pca_thresholds = [result[1] for result in results]
+    best_alphas = [result[2] for result in results]
+
+    most_common_pca_threshold = Counter(best_pca_thresholds).most_common(1)[0][0]
     most_common_alpha = Counter(best_alphas).most_common(1)[0][0]
+    print(f"Most common best PCA threshold across top voxels: {most_common_pca_threshold}")
     print(f"Most common best alpha across top voxels: {most_common_alpha}")
 
     # Get unique filename to avoid overwriting
-    unique_results_path = get_unique_filename(paths["results_path"], "best_alphas.csv")
+    unique_results_path = get_unique_filename(paths["results_path"], "best_params.csv")
 
-    df_results = pd.DataFrame(results, columns=["Voxel", "Best_Alpha"])
+    df_results = pd.DataFrame(results, columns=["Voxel", "Best_PCA_Threshold", "Best_Alpha"])
     df_results.to_csv(unique_results_path, index=False)
-    print(f"Best alpha values saved to {unique_results_path}!")
+    print(f"Best parameters saved to {unique_results_path}!")
 
     elapsed_time = time.time() - start_time
     print(f"Total execution time: {elapsed_time:.2f} seconds")
 
-# Run the script
 if __name__ == "__main__":
     main()

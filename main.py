@@ -103,6 +103,7 @@ def voxel_analysis(voxel, database_train, database_test, alpha):
     correlation = pearsonr(y_pred, y_test)[0] if np.std(y_test) > 0 else 0
     return voxel, correlation
 
+
 # Main function
 def main():
     start_time = time.time()  # Start timing
