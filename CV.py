@@ -75,7 +75,6 @@ def load_dataset(args, paths):
         "mode": args.mode,
         "use_base_features": args.use_base_features,
         "pca_threshold": args.pca_threshold,
-        "optimize_pca_threshold": args.optimize_pca_threshold
     }
 
     database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)

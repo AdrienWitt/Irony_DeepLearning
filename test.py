@@ -13,10 +13,8 @@ import dataset
 args = argparse.Namespace(
     img_size=[75, 92, 77],
     mode="text_audio",
-    pca_threshold = .80,
+    pca_threshold = .60,
     use_base_features=False,
-    n_component_text=25,
-    n_component_audio=200,
     alpha=0.5,
     num_jobs=-1
 )
@@ -39,7 +37,6 @@ def get_paths():
     
     return paths
 
-# Function to load dataset and split participants
 def load_dataset(args, paths):
     """Loads the dataset using parsed arguments."""
     participant_list = os.listdir(paths["data_path"])
@@ -53,8 +50,7 @@ def load_dataset(args, paths):
         "embeddings_audio_path": paths["embeddings_audio_path"],
         "mode": args.mode,
         "use_base_features": args.use_base_features,
-        "n_component_text": args.n_component_text,
-        "n_component_audio": args.n_component_audio
+        "pca_threshold": args.pca_threshold,
     }
 
     database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
@@ -87,20 +83,6 @@ df = database_train.data
 
 text_cols = [col for col in df.columns if col.startswith("pc_text_")]
 audio_cols = [col for col in df.columns if col.startswith("pc_audio_")]
-
-
-# Compute correlation matrix
-corr_matrix = df[text_cols + audio_cols].corr()
-
-# Extract correlations between text and audio features
-text_audio_corr = corr_matrix.loc[text_cols, audio_cols]
-import seaborn as sns
-import matplotlib.pyplot as plt# Visualize the correlation matrix
-
-plt.figure(figsize=(12, 6))
-sns.heatmap(text_audio_corr, annot=True, cmap="coolwarm", fmt=".2f")
-plt.title("Correlation Between Text and Audio Features")
-plt.show()
 
 
 # Generate voxel list dynamically
