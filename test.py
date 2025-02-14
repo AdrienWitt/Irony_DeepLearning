@@ -79,7 +79,9 @@ def voxel_analysis(voxel, database_train, database_test, alpha):
 
 paths = get_paths()
 database_train, database_test = load_dataset(args, paths)
-df = database_train.data
+voxel = (38, 77, 50)
+
+df = database_train.get_voxel_values(voxel)
 
 text_cols = [col for col in df.columns if col.startswith("pc_text_")]
 audio_cols = [col for col in df.columns if col.startswith("pc_audio_")]
@@ -87,7 +89,6 @@ audio_cols = [col for col in df.columns if col.startswith("pc_audio_")]
 
 # Generate voxel list dynamically
 voxel_list = list(np.ndindex(tuple(args.img_size)))
-voxel = (38, 77, 50)
 
 data = database_train.get_voxel_values((38, 78, 34))
 
