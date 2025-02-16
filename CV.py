@@ -10,6 +10,7 @@ from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
+from sklearn.compose import ColumnTransformer
 
 
 def parse_arguments():
@@ -80,6 +81,7 @@ def load_dataset(args, paths):
         "mode": args.mode,
         "use_base_features": args.use_base_features,
         "pca_threshold": args.pca_threshold,
+        "use_pca" : args.use_pca
     }
 
     database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
@@ -107,20 +109,38 @@ def cv(voxel, database_train, alpha_values, pca_thresholds):
     df_train = df_train.sample(frac=1, random_state=42).reset_index(drop=True)
     X_train = df_train.drop(columns=["fmri_value"]).values
     y_train = df_train["fmri_value"].values  
+
+    # Identify which columns correspond to text and audio
+    text_cols = [col for col in df_train.columns if col.startswith("emb_text_")]
+    audio_cols = [col for col in df_train.columns if col.startswith('emb_audio_')]
+
+    # Define the pipeline with PCA and Ridge regression
     pipeline = Pipeline([
-        ('pca', PCA()),  # No fixed n_components yet
+        ('preprocessor', ColumnTransformer(
+            transformers=[
+                ('text', PCA(), text_cols),  # Apply PCA to text columns
+                ('audio', PCA(), audio_cols),  # Apply PCA to audio columns
+            ],
+            remainder='passthrough'  # Keep non-text, non-audio columns unchanged
+        )),
         ('ridge', Ridge())
     ])
 
+    # Define the parameter grid for PCA threshold (same threshold for both text and audio) and Ridge alpha
     param_grid = {
-        'pca__n_components': pca_thresholds,  # Optimize single PCA threshold
+        'preprocessor__text__n_components': pca_thresholds,  # Same PCA threshold for text
+        'preprocessor__audio__n_components': pca_thresholds,  # Same PCA threshold for audio
         'ridge__alpha': alpha_values  # Optimize Ridge alpha
     }
 
-    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='r2', n_jobs=-1)
+    # Perform grid search with cross-validation
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='r2')
     grid_search.fit(X_train, y_train)
 
-    return grid_search.best_params_['pca__n_components'], grid_search.best_params_['ridge__alpha']
+    # Return the best PCA components for both text and audio and the best alpha value
+    return grid_search.best_params_['preprocessor__text__n_components'], \
+           grid_search.best_params_['preprocessor__audio__n_components'], \
+           grid_search.best_params_['ridge__alpha']
 
 def main():
     start_time = time.time()
