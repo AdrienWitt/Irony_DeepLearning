@@ -65,17 +65,6 @@ class BaseDataset(Dataset):
         img_padded = self.pad_to_max(img)
         return img_padded
     
-    def apply_pca(self, embeddings_list, prefix):
-        """Applies PCA transformation to embeddings."""
-        embeddings_df = pd.DataFrame(np.vstack(embeddings_list))
-        pca = PCA()
-        pca.fit(embeddings_df)        
-        cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-        num_components = np.searchsorted(cumulative_variance, self.pca_threshold) + 1
-        pca = PCA(n_components=num_components)
-        embeddings_pca = pca.fit_transform(embeddings_df)        
-        return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(num_components)])
-
     def create_base_data(self):
         """Sets up the data by loading and processing fMRI data."""
         base_data = []
@@ -115,6 +104,11 @@ class BaseDataset(Dataset):
                         "evaluation": evaluation
                     })
         return base_data
+    
+    def apply_pca(self, embeddings_df, prefix):
+        pca = PCA(n_components=self.pca_threshold)  
+        embeddings_pca = pca.fit_transform(embeddings_df)
+        return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(embeddings_pca.shape[1])])
     
 
     def set_data(self):
@@ -159,18 +153,32 @@ class BaseDataset(Dataset):
     
         # PCA for text embeddings
         if self.mode in ['text', 'text_audio']:
-            df_pca_text = self.apply_pca(embeddings_text_list, prefix="pc_text")
-            df = pd.concat([df, df_pca_text], axis=1)
-            embedding_cols = [col for col in df.columns if col.startswith("pc_text_")]
-            df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
-    
+            embeddings_df = pd.DataFrame(np.vstack(embeddings_text_list))
+            embeddings_df.columns = [f"emb_text_{i}" for i in range(embeddings_df.shape[1])]  # Rename columns
+            if self.use_pca:
+                df_pca_text = self.apply_pca(embeddings_df, prefix="pc_text")
+                df = pd.concat([df, df_pca_text], axis=1)
+                embedding_cols = [col for col in df.columns if col.startswith("pc_text_")]
+                df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
+            else:
+                df = pd.concat([df, embeddings_df], axis=1)
+                embedding_cols = [col for col in df.columns if col.startswith("emb_text_")]
+                df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
+                    
         # PCA for audio embeddings
         if self.mode in ['audio', 'text_audio']:
-            df_pca_audio = self.apply_pca(embeddings_audio_list, prefix="pc_audio")
-            df = pd.concat([df, df_pca_audio], axis=1)
-            embedding_cols = [col for col in df.columns if col.startswith("pc_audio_")]
-            df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
-    
+            embeddings_df = pd.DataFrame(np.vstack(embeddings_audio_list))
+            embeddings_df.columns = [f"emb_audio_{i}" for i in range(embeddings_df.shape[1])]  # Rename columns
+            if self.use_pca:
+                df_pca_audio = self.apply_pca(embeddings_df, prefix="pc_audio")
+                df = pd.concat([df, df_pca_audio], axis=1)
+                embedding_cols = [col for col in df.columns if col.startswith("pc_audio_")]
+                df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
+            else:
+                df = pd.concat([df, embeddings_df], axis=1)
+                embedding_cols = [col for col in df.columns if col.startswith("emb_audio_")]
+                df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
+                    
         return df
 
     def get_voxel_values(self, voxel):

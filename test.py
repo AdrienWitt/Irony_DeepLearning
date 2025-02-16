@@ -13,11 +13,13 @@ import dataset
 args = argparse.Namespace(
     img_size=[75, 92, 77],
     mode="text_audio",
-    pca_threshold = .60,
+    pca_threshold = .50,
     use_base_features=False,
     alpha=0.5,
-    num_jobs=-1
+    num_jobs=-1,
+    use_pca=True
 )
+
 
 
 # Function to set up paths dynamically
@@ -51,6 +53,7 @@ def load_dataset(args, paths):
         "mode": args.mode,
         "use_base_features": args.use_base_features,
         "pca_threshold": args.pca_threshold,
+        "use_pca" : args.use_pca
     }
 
     database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
@@ -80,7 +83,6 @@ def voxel_analysis(voxel, database_train, database_test, alpha):
 paths = get_paths()
 database_train, database_test = load_dataset(args, paths)
 voxel = (38, 77, 50)
-
 df = database_train.get_voxel_values(voxel)
 
 text_cols = [col for col in df.columns if col.startswith("pc_text_")]

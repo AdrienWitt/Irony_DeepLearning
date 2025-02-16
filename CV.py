@@ -5,9 +5,12 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+from sklearn.model_selection import train_test_split, GridSearchCV
 from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
+from sklearn.pipeline import Pipeline
+from sklearn.decomposition import PCA
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
@@ -20,6 +23,8 @@ def parse_arguments():
                                default="base_features", help="Mode for dataset loading (default: base_features).")
     dataset_group.add_argument("--use_base_features", action="store_true", 
                                help="Include base features in dataset (default: False).")
+    dataset_group.add_argument("--use_pca", action="store_true", 
+                               help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
     dataset_group.add_argument("--pca_threshold", type=float, nargs='+', default=[0.70, 0.80, 0.90],
                            help="List of explained variance thresholds for text PCA (default: [0.90, 0.95, 0.99]).")
 
@@ -97,39 +102,25 @@ def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
 
     return top_voxels
 
-def nested_cv(voxel, database_train, alpha_values, pca_thresholds):
+def cv(voxel, database_train, alpha_values, pca_thresholds):
     df_train = database_train.get_voxel_values(voxel)
+    df_train = df_train.sample(frac=1, random_state=42).reset_index(drop=True)
     X_train = df_train.drop(columns=["fmri_value"]).values
     y_train = df_train["fmri_value"].values  
+    pipeline = Pipeline([
+        ('pca', PCA()),  # No fixed n_components yet
+        ('ridge', Ridge())
+    ])
 
-    outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
-    inner_cv = KFold(n_splits=3, shuffle=True, random_state=42)
+    param_grid = {
+        'pca__n_components': pca_thresholds,  # Optimize single PCA threshold
+        'ridge__alpha': alpha_values  # Optimize Ridge alpha
+    }
 
-    best_scores = []
-    best_params = []
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='r2', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
 
-    for pca_threshold in pca_thresholds:
-        # Update PCA threshold in the dataset
-        database_train.update_pca_threshold(pca_threshold)
-
-        ridge = Ridge()
-        param_grid = {'alpha': alpha_values}
-        grid_search = GridSearchCV(ridge, param_grid, cv=inner_cv, scoring='r2')
-
-        # Outer CV loop
-        for train_idx, val_idx in outer_cv.split(X_train):
-            X_train_fold, X_val_fold = X_train[train_idx], X_train[val_idx]
-            y_train_fold, y_val_fold = y_train[train_idx], y_train[val_idx]
-
-            grid_search.fit(X_train_fold, y_train_fold)
-            best_scores.append(grid_search.best_score_)
-            best_params.append((pca_threshold, grid_search.best_params_['alpha']))
-
-    # Find the best combination of PCA threshold and alpha
-    best_idx = np.argmax(best_scores)
-    best_pca_threshold, best_alpha = best_params[best_idx]
-
-    return voxel, best_pca_threshold, best_alpha
+    return grid_search.best_params_['pca__n_components'], grid_search.best_params_['ridge__alpha']
 
 def main():
     start_time = time.time()
@@ -157,12 +148,12 @@ def main():
     print(f"Using {len(top_voxels)} top voxels for analysis.")
 
     results = Parallel(n_jobs=num_jobs)(
-        delayed(nested_cv)(voxel, database_train, alpha_values, pca_thresholds) for voxel in top_voxels
+        delayed(cv)(voxel, database_train, alpha_values, pca_thresholds) for voxel in top_voxels
     )
 
-    best_pca_thresholds = [result[1] for result in results]
-    best_alphas = [result[2] for result in results]
-
+    best_pca_thresholds = [result[0] for result in results]  # These are PCA components
+    best_alphas = [result[1] for result in results]
+    
     most_common_pca_threshold = Counter(best_pca_thresholds).most_common(1)[0][0]
     most_common_alpha = Counter(best_alphas).most_common(1)[0][0]
     print(f"Most common best PCA threshold across top voxels: {most_common_pca_threshold}")
