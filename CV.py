@@ -107,12 +107,12 @@ def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
 def cv(voxel, database_train, alpha_values, pca_thresholds):
     df_train = database_train.get_voxel_values(voxel)
     df_train = df_train.sample(frac=1, random_state=42).reset_index(drop=True)
-    X_train = df_train.drop(columns=["fmri_value"]).values
-    y_train = df_train["fmri_value"].values  
+    X_train = df_train.drop(columns=["fmri_value"])
+    y_train = df_train["fmri_value"]  
 
     # Identify which columns correspond to text and audio
-    text_cols = [col for col in df_train.columns if col.startswith("emb_text_")]
-    audio_cols = [col for col in df_train.columns if col.startswith('emb_audio_')]
+    text_cols = [col for col in X_train.columns if col.startswith("emb_text_")]
+    audio_cols = [col for col in X_train.columns if col.startswith('emb_audio_')]
 
     # Define the pipeline with PCA and Ridge regression
     pipeline = Pipeline([
