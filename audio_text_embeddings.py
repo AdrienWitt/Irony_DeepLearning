@@ -4,7 +4,6 @@ os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony
 import numpy as np
 from transformers import Wav2Vec2Model, Wav2Vec2Processor, AutoTokenizer, AutoModel, Wav2Vec2BertModel
 import torchaudio
-from sklearn.decomposition import PCA
 import numpy as np
 import pandas as pd
 from pydub import AudioSegment
@@ -35,6 +34,10 @@ model_text = AutoModel.from_pretrained("almanach/camembertav2-base")
 tokenizer_text = AutoTokenizer.from_pretrained("almanach/camembertav2-base")
 statements_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\text\statements"
 create_text_cls(statements_path, model_text, tokenizer_text, output_dir)
+
+context_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\text\contexts"
+create_text_cls(context_path, model_text, tokenizer_text, output_dir)
+
         
 # Create audio embeddings
 

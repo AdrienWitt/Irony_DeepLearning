@@ -12,15 +12,15 @@ import dataset
 
 args = argparse.Namespace(
     img_size=[75, 92, 77],
-    mode="text_audio",
+    use_context = True,
+    use_text = True,
+    use_audio = True,
     pca_threshold = .50,
     use_base_features=False,
     alpha=0.5,
     num_jobs=-1,
     use_pca=True
 )
-
-
 
 # Function to set up paths dynamically
 def get_paths():
@@ -29,7 +29,7 @@ def get_paths():
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
         "fmri_data_path": os.path.join(base_path, "data", "fmri"),
-        "embeddings_text_path": os.path.join(base_path, "embeddings", "text", "statements"),
+        "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "results_path": os.path.join(base_path, "results"),
     }
@@ -50,8 +50,10 @@ def load_dataset(args, paths):
         "img_size": tuple(args.img_size),
         "embeddings_text_path": paths["embeddings_text_path"],
         "embeddings_audio_path": paths["embeddings_audio_path"],
-        "mode": args.mode,
         "use_base_features": args.use_base_features,
+        "use_text": args.use_text,
+        "use_audio": args.use_audio,
+        "use_context": args.use_context,
         "pca_threshold": args.pca_threshold,
         "use_pca" : args.use_pca
     }

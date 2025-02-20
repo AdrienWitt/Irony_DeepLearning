@@ -15,97 +15,130 @@ from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr
 from joblib import Parallel, delayed
 import dataset  # Assuming this is a custom module
-
-# Function to set up paths dynamically
-def get_paths():
-    base_path = os.getcwd()  # Gets the working directory where the script is executed
-
-    paths = {
-        "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri"),
-        "embeddings_text_path": os.path.join(base_path, "embeddings", "text", "statements"),
-        "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "results_path": os.path.join(base_path, "results"),
-    }
-
-    # Create results directory if it doesn't exist
-    os.makedirs(paths["results_path"], exist_ok=True)
-    
-    return paths
-
-# Function to load dataset and split participants
-def load_datasets(paths, img_size, mode):
-    participant_list = os.listdir(paths["data_path"])
-    train_participants, test_participants = train_test_split(participant_list, test_size=0.5, random_state=42)
-
-    database_train = dataset.BaseDataset(
-        participant_list=train_participants,
-        data_path=paths["data_path"],
-        fmri_data_path=paths["fmri_data_path"],
-        img_size=img_size,
-        embeddings_text_path=paths["embeddings_text_path"],
-        embeddings_audio_path=paths["embeddings_audio_path"],
-        mode=mode
-    )
-
-    database_test = dataset.BaseDataset(
-        participant_list=test_participants,
-        data_path=paths["data_path"],
-        fmri_data_path=paths["fmri_data_path"],
-        img_size=img_size,
-        embeddings_text_path=paths["embeddings_text_path"],
-        embeddings_audio_path=paths["embeddings_audio_path"],
-        mode="audio_only" if mode == "base_features" else "base_features"
-    )
-
-    return database_train, database_test
-
-def compute_correlation(y_1, y_2):
-    """
-    Compute Pearson correlation between two arrays.
-    """
-    if np.std(y_1) > 0 and np.std(y_2) > 0:
-        return pearsonr(y_1, y_2)[0]
-    else:
-        return 0  # Return 0 if there's no variance in either array
+from joblib import Parallel, delayed
+from sklearn.model_selection import KFold
+import analysis_helpers
 
 
-def get_voxel_values(voxel, base_data):
-    voxel_values = []
-    filtered_data_list = []  # Stores dictionaries without "fmri_data"
+def set_data(base_data):
+        final_data = []
 
+        for item in base_data:
+            fmri_value = None
+            participant = item["participant"]
+            context = item["context_condition"]
+            semantic = item["statement_condition"][:2]  # First two characters
+            prosody = item["statement_condition"][-3:]
+            task = item["task"]
+            evaluation = item["evaluation"]
+            situation = item["situation"]
+
+            final_data.append({
+                "context": context, "semantic": semantic, "prosody": prosody, 
+                "task": task, "evaluation": evaluation, "fmri_value": fmri_value, "situation": situation, "participant": participant,
+
+            })  
+
+        df = pd.DataFrame(final_data)
+        df.reset_index(drop=True, inplace=True)
+        return df
+
+def get_voxel_values(voxel, base_data, data):
+    voxel_values = []        
     for item in base_data:
-        voxel_values.append(item["fmri_data"][voxel])  # Extract voxel value
-        filtered_data = {k: v for k, v in item.items() if k != "fmri_data"}  
-        filtered_data_list.append(filtered_data)  
+        voxel_values.append(item["fmri_data"][voxel])
+    data["fmri_value"] = voxel_values
+    return data
 
-    # Convert filtered data to DataFrame
-    df = pd.DataFrame(filtered_data_list)
-    df["voxel_value"] = voxel_values  # Add voxel values as a new column
+def noise_ceiling_data(data):
+    participant_dfs = {}
+    for participant in data["participant"].unique():
+        participant_data = data[data["participant"] == participant].copy()
+        other_participants_data = data[data["participant"] != participant]
+        avg_other_fmri = other_participants_data.groupby(
+            ["prosody", "context", "semantic", "task", "situation"]
+        )["fmri_value"].mean().reset_index()
+        merged_data = participant_data.merge(
+            avg_other_fmri,
+            on=["prosody", "context", "semantic", "task", "situation"],
+            suffixes=("", "_others_avg"),
+            how="left"
+        )
+        participant_dfs[participant] = merged_data
+    return participant_dfs
+
+
+def voxel_analysis(voxel, base_data, data, alpha):
+    data_voxel = get_voxel_values(voxel, base_data, data)
+    participant_data = noise_ceiling_data(data_voxel)
+    participant_correlations = []
+
+    for participant, data in participant_data.items():
+        X = data["fmri_value_others_avg"].values.reshape(-1, 1)
+        y = data["fmri_value"].values
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
+        fold_correlations = []
+
+        for train_idx, test_idx in kf.split(X):
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+
+            model = Ridge(alpha=alpha)
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+
+            correlation, _ = pearsonr(y_test, y_pred)
+            fold_correlations.append(correlation)
+
+        participant_correlations.append(np.mean(fold_correlations))
+    return np.mean(participant_correlations)  
+
+
+args = argparse.Namespace(
+    img_size=[75, 92, 77],
+    use_audio = True,
+    use_text = False,
+    use_context = False,
+    use_base_features=True,
+    use_pca=False, num_jobs = 15, alpha = 1, pca_threshold = 0.5)
+
+
+
+paths = analysis_helpers.get_paths()
+participant_list = os.listdir(paths["data_path"])
+database = analysis_helpers.load_dataset(args, paths, participant_list)
+base_data = database.base_data
+data = set_data(base_data)
+
+voxel_list = list(np.ndindex(args.img_size))
+top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
+top_voxels = analysis_helpers.get_top_voxels(database, args.img_size, voxel_list, top_voxels_path)
+
+
+for voxel in top_voxels:
+    print(f"Current voxel : {voxel}")
+    alphas = [0.01, 0.1, 1, 10, 100]
+    best_alpha = None
+    best_correlation = -np.inf
     
-    return df
-
-# Main function
-img_size = (75, 92, 77)
-mode = "base_features"
-voxel_list = list(np.ndindex(img_size))  
-paths = get_paths()
-database_train, database_test = load_datasets(paths, img_size, mode)
-base_data1 = database_train.base_data
-a = base_data1[1:4]
-filtered_data = {k: v for k, v in a.items() if k not in "fmri_data"}
-voxel = voxel_list[222222]
-base_data = get_voxel_values(voxel, base_data1)
-
-
-noise_map = np.zeros(img_size)
-for voxel in voxel_list:
-    df_1 = database_train.get_voxel_values(voxel)
-    df_2 = database_test.get_voxel_values(voxel)
-    y_1 = df_1["fmri_value"].values
-    y_2 = df_2["fmri_value"].values
+    for alpha in alphas:
+        corr = voxel_analysis(voxel, base_data, data, alpha)
+        print(f"Alpha: {alpha}, Mean Correlation: {corr:.4f}")
+        
+        if corr > best_correlation:
+            best_correlation = corr
+            best_alpha = alpha
     
-result_file = os.path.join(paths["results_path"], f"noise_ceiling.npy")
+    print(f"Best Alpha: {best_alpha}, Highest Correlation: {best_correlation:.4f}")
+
+results = Parallel(n_jobs=args.num_job)(
+    delayed(voxel_analysis)(voxel, base_data, data, args.alpha) for voxel in voxel_list
+)
+
+    
+    
+
+
 
     
 

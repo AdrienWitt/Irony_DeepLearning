@@ -16,13 +16,12 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 class BaseDataset(Dataset):
-    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), mode='base_features', pca_threshold = 0.95, **kwargs):
+    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), pca_threshold = 0.95, **kwargs):
         super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path
         self.img_size = img_size
         self.participant_list = participant_list
-        self.mode = mode
         self.register_args(**kwargs)
         self.scaler = StandardScaler()
         self.pca_threshold = pca_threshold
@@ -112,47 +111,46 @@ class BaseDataset(Dataset):
     
 
     def set_data(self):
-        if self.mode in ['base_features', 'text', 'audio', 'text_audio']:
-            final_data = []
-            embeddings_text_list = []
-            embeddings_audio_list = []
-    
-            for item in self.base_data:
-                fmri_value = None
-                context = item["context_condition"]
-                semantic = item["statement_condition"][:2]  # First two characters
-                prosody = item["statement_condition"][-3:]
-                task = item["task"]
-                evaluation = item["evaluation"]
-    
-                if self.use_base_features:
-                    final_data.append({
-                        "context": context, "semantic": semantic, "prosody": prosody, 
-                        "task": task, "evaluation": evaluation, "fmri_value": fmri_value
-                    })  
-                else:
-                    final_data.append({"fmri_value": fmri_value})
-    
-                embeddings_text = np.load(os.path.join(self.embeddings_text_path, f"{semantic}_{item['situation']}_CLS.npy"))
-                embeddings_text_list.append(embeddings_text)
-    
-                embeddings_audio = np.load(os.path.join(self.embeddings_audio_path, f"{item['statement'].replace('.wav', '_layers5-6.npy')}"))
-                embeddings_audio_list.append(embeddings_audio)
-    
+        final_data = []
+        embeddings_text_list = []
+        embeddings_audio_list = []
+        embeddings_context_list = []
+        
+        for item in self.base_data:
+            fmri_value = None
+            context = item["context_condition"]
+            semantic = item["statement_condition"][:2]
+            prosody = item["statement_condition"][-3:]
+            task = item["task"]
+            evaluation = item["evaluation"]
+
             if self.use_base_features:
-                df = pd.DataFrame(final_data)
-                df.reset_index(drop=True, inplace=True)
-                categorical_cols = df.columns[:4]  # First 4 columns are categorical
-                df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
-                df["evaluation"] = df["evaluation"].fillna(df["evaluation"].median())
+                final_data.append({
+                    "context": context, "semantic": semantic, "prosody": prosody, 
+                    "task": task, "evaluation": evaluation, "fmri_value": fmri_value
+                })  
             else:
-                df = pd.DataFrame(final_data)
-    
+                final_data.append({"fmri_value": fmri_value})
+
+            embeddings_text = np.load(os.path.join(self.embeddings_text_path, "statements", f"{semantic}_{item['situation']}_CLS.npy"))
+            embeddings_text_list.append(embeddings_text)
+
+            embeddings_audio = np.load(os.path.join(self.embeddings_audio_path, f"{item['statement'].replace('.wav', '_layers5-6.npy')}"))
+            embeddings_audio_list.append(embeddings_audio)
+            
+            embeddings_context = np.load(os.path.join(self.embeddings_text_path, "contexts", f"{context}_{item['situation']}_CLS.npy"))
+            embeddings_context_list.append(embeddings_context)
+
+        if self.use_base_features:
+            df = pd.DataFrame(final_data)
+            df.reset_index(drop=True, inplace=True)
+            categorical_cols = df.columns[:4]  # First 4 columns are categorical
+            df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
+            df["evaluation"] = df["evaluation"].fillna(df["evaluation"].median())
         else:
-            raise ValueError(f"Invalid mode: {self.mode}")
-    
-        # PCA for text embeddings
-        if self.mode in ['text', 'text_audio']:
+            df = pd.DataFrame(final_data)
+
+        if self.use_text:
             embeddings_df = pd.DataFrame(np.vstack(embeddings_text_list))
             embeddings_df.columns = [f"emb_text_{i}" for i in range(embeddings_df.shape[1])]  # Rename columns
             if self.use_pca:
@@ -165,8 +163,7 @@ class BaseDataset(Dataset):
                 embedding_cols = [col for col in df.columns if col.startswith("emb_text_")]
                 df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
                     
-        # PCA for audio embeddings
-        if self.mode in ['audio', 'text_audio']:
+        if self.use_audio:
             embeddings_df = pd.DataFrame(np.vstack(embeddings_audio_list))
             embeddings_df.columns = [f"emb_audio_{i}" for i in range(embeddings_df.shape[1])]  # Rename columns
             if self.use_pca:
@@ -177,6 +174,19 @@ class BaseDataset(Dataset):
             else:
                 df = pd.concat([df, embeddings_df], axis=1)
                 embedding_cols = [col for col in df.columns if col.startswith("emb_audio_")]
+                df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
+                
+        if self.use_context:
+            embeddings_df = pd.DataFrame(np.vstack(embeddings_context_list))
+            embeddings_df.columns = [f"emb_context_{i}" for i in range(embeddings_df.shape[1])]  # Rename columns
+            if self.use_pca:
+                df_pca_audio = self.apply_pca(embeddings_df, prefix="pc_context")
+                df = pd.concat([df, df_pca_audio], axis=1)
+                embedding_cols = [col for col in df.columns if col.startswith("pc_context_")]
+                df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
+            else:
+                df = pd.concat([df, embeddings_df], axis=1)
+                embedding_cols = [col for col in df.columns if col.startswith("emb_context_")]
                 df[embedding_cols] = self.scaler.fit_transform(df[embedding_cols])
                     
         return df

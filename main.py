@@ -51,7 +51,7 @@ def get_paths():
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
         "fmri_data_path": os.path.join(base_path, "data", "fmri"),
-        "embeddings_text_path": os.path.join(base_path, "embeddings", "text", "statements"),
+        "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "results_path": os.path.join(base_path, "results"),
     }
@@ -61,7 +61,6 @@ def get_paths():
     
     return paths
 
-# Function to load dataset and split participants
 def load_dataset(args, paths):
     """Loads the dataset using parsed arguments."""
     participant_list = os.listdir(paths["data_path"])
@@ -73,10 +72,12 @@ def load_dataset(args, paths):
         "img_size": tuple(args.img_size),
         "embeddings_text_path": paths["embeddings_text_path"],
         "embeddings_audio_path": paths["embeddings_audio_path"],
-        "mode": args.mode,
         "use_base_features": args.use_base_features,
-        "n_component_text": args.n_component_text,
-        "n_component_audio": args.n_component_audio
+        "use_text": args.use_text,
+        "use_audio": args.use_audio,
+        "use_context": args.use_context,
+        "pca_threshold": args.pca_threshold,
+        "use_pca" : args.use_pca
     }
 
     database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)

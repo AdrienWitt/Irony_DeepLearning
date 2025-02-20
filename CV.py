@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV, train_test_split
 from joblib import Parallel, delayed
-import dataset  # Assuming this is a custom module
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.compose import ColumnTransformer
+import analysis_helpers
 
 
 def parse_arguments():
@@ -20,10 +20,14 @@ def parse_arguments():
     dataset_group = parser.add_argument_group("Dataset Arguments")
     dataset_group.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
                                help="Size of fMRI images as three integers (default: 75 92 77).")
-    dataset_group.add_argument("--mode", type=str, choices=["base_features", "audio", "text", "text_audio"], 
-                               default="base_features", help="Mode for dataset loading (default: base_features).")
     dataset_group.add_argument("--use_base_features", action="store_true", 
                                help="Include base features in dataset (default: False).")
+    dataset_group.add_argument("--use_text", action="store_true", 
+                               help="Include text in dataset (default: False).")
+    dataset_group.add_argument("--use_audio", action="store_true", 
+                               help="Include audio in dataset (default: False).")
+    dataset_group.add_argument("--use_context", action="store_true", 
+                               help="Include context in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
                                help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
     dataset_group.add_argument("--pca_threshold", type=float, nargs='+', default=[0.70, 0.80, 0.90],
@@ -40,69 +44,6 @@ def parse_arguments():
 
     return parser.parse_args()
 
-def get_paths():
-    base_path = os.getcwd()  # Gets the working directory where the script is executed
-
-    paths = {
-        "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri"),
-        "embeddings_text_path": os.path.join(base_path, "embeddings", "text", "statements"),
-        "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "results_path": os.path.join(base_path, "cv_results"),
-    }
-
-    # Create results directory if it doesn't exist
-    os.makedirs(paths["results_path"], exist_ok=True)
-    
-    return paths
-
-def get_unique_filename(base_path, filename):
-    name, ext = os.path.splitext(filename)
-    counter = 1
-    new_filename = filename
-
-    while os.path.exists(os.path.join(base_path, new_filename)):
-        new_filename = f"{name}_{counter}{ext}"
-        counter += 1
-
-    return os.path.join(base_path, new_filename)
-
-def load_dataset(args, paths):
-    """Loads the dataset using parsed arguments."""
-    participant_list = os.listdir(paths["data_path"])
-    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
-
-    dataset_args = {
-        "data_path": paths["data_path"],
-        "fmri_data_path": paths["fmri_data_path"],
-        "img_size": tuple(args.img_size),
-        "embeddings_text_path": paths["embeddings_text_path"],
-        "embeddings_audio_path": paths["embeddings_audio_path"],
-        "mode": args.mode,
-        "use_base_features": args.use_base_features,
-        "pca_threshold": args.pca_threshold,
-        "use_pca" : args.use_pca
-    }
-
-    database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
-
-    return database_train
-
-def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
-    if os.path.exists(top_voxels_path):
-        df_voxels = pd.read_csv(top_voxels_path)
-        top_voxels = [tuple(x) for x in df_voxels.to_records(index=False)]
-        print(f"Loaded {len(top_voxels)} voxels from {top_voxels_path}")
-    else:
-        mean_activation = {voxel: np.mean(database_train.get_voxel_values(voxel)["fmri_value"].values) for voxel in voxel_list}
-        threshold = np.percentile(list(mean_activation.values()), 90)
-        top_voxels = [voxel for voxel, activation in mean_activation.items() if activation >= threshold]
-        
-        df_voxels = pd.DataFrame(top_voxels, columns=["X", "Y", "Z"])
-        df_voxels.to_csv(top_voxels_path, index=False)
-        print(f"Computed and saved {len(top_voxels)} top voxels to {top_voxels_path}")
-
-    return top_voxels
 
 def cv(voxel, database_train, alpha_values, pca_thresholds):
     df_train = database_train.get_voxel_values(voxel)
@@ -147,24 +88,30 @@ def main():
 
     args = parse_arguments()
     img_size = tuple(args.img_size)
-    mode = args.mode
     alpha_values = args.alpha_values
     pca_thresholds = args.pca_threshold
     num_jobs = args.num_jobs  # Get the number of parallel jobs from command line
     print(f"Running with settings:\n"
+    f"- Use base features: {args.use_base_features}"
+    f"- Use text: {args.use_text}\n"
+    f"- Use audio: {args.use_audio}\n"
+    f"- Use context: {args.use_context}\n"
     f"- Image size: {args.img_size}\n"
-    f"- Mode: {args.mode}\n"
     f"- Use base features: {args.use_base_features}\n"
     f"- PCA thresholds: {args.pca_threshold}\n"
     f"- Ridge alpha: {args.alpha_values}\n"
     f"- Number of parallel jobs: {args.num_jobs}")
+    
 
-    paths = get_paths()
-    database_train = load_dataset(args, paths)
+    paths = analysis_helpers.get_paths()
+    
+    participant_list = os.listdir(paths["data_path"])
+    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
+    database_train = analysis_helpers.load_dataset(args, paths, train_participants)
 
     voxel_list = list(np.ndindex(img_size))
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
-    top_voxels = get_top_voxels(database_train, img_size, voxel_list, top_voxels_path)
+    top_voxels = analysis_helpers.get_top_voxels(database_train, img_size, voxel_list, top_voxels_path)
     print(f"Using {len(top_voxels)} top voxels for analysis.")
 
     results = Parallel(n_jobs=num_jobs)(
@@ -180,7 +127,7 @@ def main():
     print(f"Most common best alpha across top voxels: {most_common_alpha}")
 
     # Get unique filename to avoid overwriting
-    unique_results_path = get_unique_filename(paths["results_path"], "best_params.csv")
+    unique_results_path = analysis_helpers.get_unique_filename(paths["results_path"], "best_params.csv")
 
     df_results = pd.DataFrame(results, columns=["Voxel", "Best_PCA_Threshold", "Best_Alpha"])
     df_results.to_csv(unique_results_path, index=False)
