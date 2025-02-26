@@ -106,8 +106,7 @@ def main():
     paths = analysis_helpers.get_paths()
     
     participant_list = os.listdir(paths["data_path"])
-    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
-    database_train = analysis_helpers.load_dataset(args, paths, train_participants)
+    database_train = analysis_helpers.load_dataset(args, paths, participant_list)
 
     voxel_list = list(np.ndindex(img_size))
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
