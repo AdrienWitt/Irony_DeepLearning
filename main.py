@@ -7,17 +7,17 @@ from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr
 from joblib import Parallel, delayed
 import dataset  
+import analysis_helpers
 
 os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 args = argparse.Namespace(
     img_size=[75, 92, 77],
-    mode="text_audio",
-    use_base_features=False,
-    n_component_text=25,
-    n_component_audio=200,
-    alpha=0.5,
-    num_jobs=-1
-)
+    use_audio = True,
+    use_text = False,
+    use_context = False,
+    use_base_features=True,
+    use_pca=True, num_jobs = 15, alpha = 1, pca_threshold = 0.5)
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
@@ -26,14 +26,18 @@ def parse_arguments():
     dataset_group = parser.add_argument_group("Dataset Arguments")
     dataset_group.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
                                help="Size of fMRI images as three integers (default: 75 92 77).")
-    dataset_group.add_argument("--mode", type=str, choices=["base_features", "audio", "text", "text_audio"], 
-                               default="base_features", help="Mode for dataset loading (default: base_features).")
     dataset_group.add_argument("--use_base_features", action="store_true", 
                                help="Include base features in dataset (default: False).")
-    dataset_group.add_argument("--n_component_text", type=int, default=22, 
-                               help="Number of PCA components for text embeddings (default: 22).")
-    dataset_group.add_argument("--n_component_audio", type=int, default=217, 
-                               help="Number of PCA components for audio embeddings (default: 217).")
+    dataset_group.add_argument("--use_text", action="store_true", 
+                               help="Include text in dataset (default: False).")
+    dataset_group.add_argument("--use_audio", action="store_true", 
+                               help="Include audio in dataset (default: False).")
+    dataset_group.add_argument("--use_context", action="store_true", 
+                               help="Include context in dataset (default: False).")
+    dataset_group.add_argument("--use_pca", action="store_true", 
+                               help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
+    dataset_group.add_argument("--pca_threshold", type=float, nargs='+', default=[0.70, 0.80, 0.90],
+                           help="List of explained variance thresholds for text PCA (default: [0.90, 0.95, 0.99]).")
 
     # **Analysis-related arguments**
     analysis_group = parser.add_argument_group("Analysis Arguments")
@@ -44,46 +48,6 @@ def parse_arguments():
 
     return parser.parse_args()
 
-# Function to set up paths dynamically
-def get_paths():
-    base_path = os.getcwd()  # Gets the working directory where the script is executed
-
-    paths = {
-        "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri"),
-        "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
-        "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "results_path": os.path.join(base_path, "results"),
-    }
-
-    # Create results directory if it doesn't exist
-    os.makedirs(paths["results_path"], exist_ok=True)
-    
-    return paths
-
-def load_dataset(args, paths):
-    """Loads the dataset using parsed arguments."""
-    participant_list = os.listdir(paths["data_path"])
-    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
-
-    dataset_args = {
-        "data_path": paths["data_path"],
-        "fmri_data_path": paths["fmri_data_path"],
-        "img_size": tuple(args.img_size),
-        "embeddings_text_path": paths["embeddings_text_path"],
-        "embeddings_audio_path": paths["embeddings_audio_path"],
-        "use_base_features": args.use_base_features,
-        "use_text": args.use_text,
-        "use_audio": args.use_audio,
-        "use_context": args.use_context,
-        "pca_threshold": args.pca_threshold,
-        "use_pca" : args.use_pca
-    }
-
-    database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
-    database_test = dataset.BaseDataset(participant_list=test_participants, **dataset_args)
-
-    return database_train, database_test
 
 # Function to perform voxel-wise Ridge regression
 def voxel_analysis(voxel, database_train, database_test, alpha):
@@ -120,8 +84,11 @@ def main():
           f"- Ridge alpha: {args.alpha}\n"
           f"- Number of parallel jobs: {args.num_jobs}")
 
-    paths = get_paths()
-    database_train, database_test = load_dataset(args, paths)
+    paths = analysis_helpers.get_paths()
+    participant_list = os.listdir(paths["data_path"])
+    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
+    database_train = analysis_helpers.load_dataset(args, paths, train_participants)
+    database_test = analysis_helpers.load_dataset(args, paths, test_participants)
 
     # Generate voxel list dynamically
     voxel_list = list(np.ndindex(tuple(args.img_size)))
@@ -143,9 +110,25 @@ def main():
     # Compute the mean correlation
     mean_correlation = np.mean(correlations)
     print(f"Mean correlation: {mean_correlation:.4f}")
+    
+    features_used = []
+    if args.use_text:
+        features_used.append("text")
+    if args.use_audio:
+        features_used.append("audio")
+    if args.use_context:
+        features_used.append("context")
+    if args.use_base_features:
+        features_used.append("base")
+    
+    # Create a feature string (e.g., "text_audio" if both are enabled)
+    feature_str = "_".join(features_used) if features_used else "nofeatures"
+    
+    # Modify the result file name
+    result_file = os.path.join(
+        paths["results_path"],
+        f"correlation_map_{args.mode}_{feature_str}.npy")
 
-    # Save the correlation map
-    result_file = os.path.join(paths["results_path"], f"correlation_map_{args.mode}.npy")
     np.save(result_file, correlation_map)
 
     end_time = time.time()  # Stop timing

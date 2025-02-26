@@ -110,7 +110,7 @@ database = analysis_helpers.load_dataset(args, paths, participant_list)
 base_data = database.base_data
 data = set_data(base_data)
 
-voxel_list = list(np.ndindex(args.img_size))
+voxel_list = list(np.ndindex(tuple(args.img_size)))
 top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
 top_voxels = analysis_helpers.get_top_voxels(database, args.img_size, voxel_list, top_voxels_path)
 

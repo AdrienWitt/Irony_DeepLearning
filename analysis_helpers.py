@@ -15,7 +15,6 @@ def get_paths():
         "results_path": os.path.join(base_path, "cv_results"),
     }
 
-    # Create results directory if it doesn't exist
     os.makedirs(paths["results_path"], exist_ok=True)
     
     return paths
