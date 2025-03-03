@@ -7,61 +7,22 @@ from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr
 from joblib import Parallel, delayed
 import pandas as pd 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+os.chdir(r"C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 import dataset  
 
 args = argparse.Namespace(
     img_size=[75, 92, 77],
-    use_context = True,
-    use_text = True,
-    use_audio = True,
+    use_context = False,
+    use_text = False,
+    use_audio = False,
     pca_threshold = .50,
-    use_base_features=False,
+    use_base_features=True,
     alpha=0.5,
     num_jobs=-1,
     use_pca=True
 )
 
-# Function to set up paths dynamically
-def get_paths():
-    base_path = os.getcwd()  # Gets the working directory where the script is executed
 
-    paths = {
-        "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri"),
-        "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
-        "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "results_path": os.path.join(base_path, "results"),
-    }
-
-    # Create results directory if it doesn't exist
-    os.makedirs(paths["results_path"], exist_ok=True)
-    
-    return paths
-
-def load_dataset(args, paths):
-    """Loads the dataset using parsed arguments."""
-    participant_list = os.listdir(paths["data_path"])
-    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
-
-    dataset_args = {
-        "data_path": paths["data_path"],
-        "fmri_data_path": paths["fmri_data_path"],
-        "img_size": tuple(args.img_size),
-        "embeddings_text_path": paths["embeddings_text_path"],
-        "embeddings_audio_path": paths["embeddings_audio_path"],
-        "use_base_features": args.use_base_features,
-        "use_text": args.use_text,
-        "use_audio": args.use_audio,
-        "use_context": args.use_context,
-        "pca_threshold": args.pca_threshold,
-        "use_pca" : args.use_pca
-    }
-
-    database_train = dataset.BaseDataset(participant_list=train_participants, **dataset_args)
-    database_test = dataset.BaseDataset(participant_list=test_participants, **dataset_args)
-
-    return database_train, database_test
 
 # Function to perform voxel-wise Ridge regression
 def voxel_analysis(voxel, database_train, database_test, alpha):
@@ -82,7 +43,15 @@ def voxel_analysis(voxel, database_train, database_test, alpha):
     correlation = pearsonr(y_pred, y_test)[0] if np.std(y_test) > 0 else 0
     return voxel, correlation
 
-paths = get_paths()
+import analysis_helpers
+paths = analysis_helpers.get_paths()
+
+for file in os.listdir(os.path.join(paths["embeddings_text_path"], "statements")):
+    path = os.path.join(paths["embeddings_text_path"], "statements", file)
+    print(path)
+    emb = np.load(path)
+
+
 database_train, database_test = load_dataset(args, paths)
 voxel = (38, 77, 50)
 df = database_train.get_voxel_values(voxel)

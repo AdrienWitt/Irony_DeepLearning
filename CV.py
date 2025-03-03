@@ -92,7 +92,7 @@ def main():
     pca_thresholds = args.pca_threshold
     num_jobs = args.num_jobs  # Get the number of parallel jobs from command line
     print(f"Running with settings:\n"
-    f"- Use base features: {args.use_base_features}"
+    f"- Use base features: {args.use_base_features}\n"
     f"- Use text: {args.use_text}\n"
     f"- Use audio: {args.use_audio}\n"
     f"- Use context: {args.use_context}\n"
