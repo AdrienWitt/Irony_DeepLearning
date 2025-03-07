@@ -80,9 +80,7 @@ def parse_arguments():
 
 def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, use_best_base=False, use_best_pca=False):
     paths = analysis_helpers.get_paths()
-    
-    print(voxel)
-    
+        
     # Create a unique random seed from voxel coordinates
     random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
     
@@ -259,7 +257,6 @@ def main():
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(args.img_size), voxel_list, top_voxels_path)
-    top_voxels = top_voxels[:int(np.floor(0.1 * len(top_voxels)))]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Method 2: Using multiprocessing Pool
