@@ -13,6 +13,21 @@ from sklearn.compose import ColumnTransformer
 import analysis_helpers
 
 
+args = argparse.Namespace(
+    img_size=[75, 92, 77],
+    use_context = False,
+    use_text = True,
+    use_audio = True,
+    pca_threshold = .50,
+    use_base_features=True,
+    alpha=0.5,
+    num_jobs=1,
+    use_pca=False,
+    fixed_alpha = 100,
+    step = 1 
+)
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
 
@@ -63,33 +78,38 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def cv(voxel, database_train, alpha_values, pca_thresholds, step, fixed_alpha=None, use_best_base=False, use_best_pca=False):
-    df_train = database_train.get_voxel_values(voxel)
-    df_train = df_train.sample(frac=1, random_state=42).reset_index(drop=True)
+def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, use_best_base=False, use_best_pca=False):
+    paths = analysis_helpers.get_paths()
     
-    # Split features into base features and other features
-    base_feature_cols = [col for col in df_train.columns if col.startswith("base_")]
-    other_cols = [col for col in df_train.columns if col not in base_feature_cols + ["fmri_value"]]
+    print(voxel)
     
-    X_train = df_train.drop(columns=["fmri_value"])
-    y_train = df_train["fmri_value"]  
+    # Create a unique random seed from voxel coordinates
+    random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
+    
+    df_train = df_train.sample(frac=1, random_state=random_seed).reset_index(drop=True)
 
-    # Identify which columns correspond to text and audio
-    text_cols = [col for col in X_train.columns if col.startswith("emb_text_")]
-    audio_cols = [col for col in X_train.columns if col.startswith('emb_audio_')]
+    
+    # Identify embedding columns
+    text_cols = [col for col in df_train.columns if col.startswith(('emb_text_', 'pc_text_'))]
+    audio_cols = [col for col in df_train.columns if col.startswith(('emb_audio_', 'pc_audio_'))]
+    embedding_cols = text_cols + audio_cols    
+    
+    # Prepare features and target
+    X_train = df_train.drop(columns=["fmri_value"])
+    y_train = df_train["fmri_value"]  # Keep as pandas Series like in working code
 
     if step == 1:  # Base features comparison with fixed alpha
         # Create two different feature sets
         X_with_base = X_train
-        X_without_base = X_train[other_cols]
+        X_without_base = X_train[embedding_cols]  # Only keep embedding columns
         
         # Define pipelines for both configurations without PCA
         pipeline_with_base = Pipeline([
-            ('ridge', Ridge(alpha=fixed_alpha))
+            ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
         
         pipeline_without_base = Pipeline([
-            ('ridge', Ridge(alpha=fixed_alpha))
+            ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
         
         # Fit both pipelines
@@ -116,7 +136,7 @@ def cv(voxel, database_train, alpha_values, pca_thresholds, step, fixed_alpha=No
             use_base = True  # Default to using base features
         
         # Select appropriate feature set
-        X = X_train if use_base else X_train[other_cols]
+        X = X_train if use_base else X_train[embedding_cols]
         
         # Define pipeline with PCA threshold optimization
         pipeline = Pipeline([
@@ -127,7 +147,7 @@ def cv(voxel, database_train, alpha_values, pca_thresholds, step, fixed_alpha=No
                 ],
                 remainder='passthrough'
             )),
-            ('ridge', Ridge(alpha=fixed_alpha))
+            ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
         
         param_grid = {
@@ -163,7 +183,7 @@ def cv(voxel, database_train, alpha_values, pca_thresholds, step, fixed_alpha=No
             best_pca_audio = pca_thresholds[0]
         
         # Select appropriate feature set
-        X = X_train if use_base else X_train[other_cols]
+        X = X_train if use_base else X_train[embedding_cols]
         
         # Define pipeline with fixed PCA components
         pipeline = Pipeline([
@@ -174,7 +194,7 @@ def cv(voxel, database_train, alpha_values, pca_thresholds, step, fixed_alpha=No
                 ],
                 remainder='passthrough'
             )),
-            ('ridge', Ridge())
+            ('ridge', Ridge(random_state=random_seed))
         ])
         
         param_grid = {'ridge__alpha': alpha_values}
@@ -185,6 +205,22 @@ def cv(voxel, database_train, alpha_values, pca_thresholds, step, fixed_alpha=No
             'best_alpha': grid_search.best_params_['ridge__alpha'],
             'score': grid_search.best_score_
         }
+
+
+def process_voxel(args_tuple):
+    # Unpack arguments
+    voxel, df_train = args_tuple
+    
+    return cv(
+        df_train,
+        voxel,
+        args.alpha_values if args.step == 3 else None,
+        args.pca_threshold if args.step == 2 else None,
+        args.step,
+        args.fixed_alpha if args.step == 1 else None,
+        args.step2_use_best_base if args.step == 2 else args.step3_use_best_base if args.step == 3 else False,
+        args.step3_use_best_pca if args.step == 3 else False
+    )
 
 
 def main():
@@ -213,28 +249,31 @@ def main():
 
     paths = analysis_helpers.get_paths()
     
+    # Get list of voxels to process
+    voxel_list = list(np.ndindex(tuple(args.img_size)))
+    
+    # Load dataset once
     participant_list = os.listdir(paths["data_path"])
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
-
-    voxel_list = list(np.ndindex(tuple(args.img_size)))
+    
+    # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(args.img_size), voxel_list, top_voxels_path)
+    top_voxels = top_voxels[:int(np.floor(0.1 * len(top_voxels)))]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
+    
+    # Method 2: Using multiprocessing Pool
+    from multiprocessing import Pool
 
-    # Run cross-validation
-    results = Parallel(n_jobs=args.num_jobs)(
-        delayed(cv)(
-            voxel, 
-            database_train, 
-            args.alpha_values if args.step == 3 else None,
-            args.pca_threshold if args.step == 2 else None,
-            args.step,
-            args.fixed_alpha if args.step == 1 else None,
-            args.step2_use_best_base if args.step == 2 else args.step3_use_best_base if args.step == 3 else False,
-            args.step3_use_best_pca if args.step == 3 else False
-        ) 
+    # Prepare arguments for each voxel - get voxel values beforehand
+    process_args = [
+        (voxel, database_train.get_voxel_values(voxel))
         for voxel in top_voxels
-    )
+    ]
+
+    # Create a pool of workers and map the work
+    with Pool(processes=args.num_jobs) as pool:
+        results = pool.map(process_voxel, process_args)
 
     # Process and save results
     if args.step == 1:
