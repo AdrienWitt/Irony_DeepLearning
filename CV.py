@@ -13,21 +13,6 @@ from sklearn.compose import ColumnTransformer
 import analysis_helpers
 
 
-args = argparse.Namespace(
-    img_size=[75, 92, 77],
-    use_context = False,
-    use_text = True,
-    use_audio = True,
-    pca_threshold = .50,
-    use_base_features=True,
-    alpha=0.5,
-    num_jobs=1,
-    use_pca=False,
-    fixed_alpha = 100,
-    step = 1 
-)
-
-
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
 
@@ -136,29 +121,67 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
         # Select appropriate feature set
         X = X_train if use_base else X_train[embedding_cols]
         
-        # Define pipeline with PCA threshold optimization
+        # Create a custom transformer that applies PCA with same threshold to both text and audio
+        class SharedPCA:
+            def __init__(self, n_components=0.5):
+                self.n_components = n_components
+                self.text_pca = PCA(n_components=n_components)
+                self.audio_pca = PCA(n_components=n_components)
+                print(f"\nTesting PCA threshold: {n_components} for both text and audio")
+                
+            def fit(self, X, y=None):
+                # Split features
+                text_features = X[text_cols]
+                audio_features = X[audio_cols]
+                other_features = X.drop(columns=text_cols + audio_cols)
+                
+                # Fit PCAs
+                self.text_pca.fit(text_features)
+                self.audio_pca.fit(audio_features)
+                
+                # Store column names
+                self.other_cols = other_features.columns
+                return self
+                
+            def transform(self, X):
+                # Transform text and audio features
+                text_transformed = self.text_pca.transform(X[text_cols])
+                audio_transformed = self.audio_pca.transform(X[audio_cols])
+                
+                # Get other features
+                other_features = X[self.other_cols]
+                
+                # Combine all features
+                result = np.hstack([text_transformed, audio_transformed, other_features])
+                return result
+                
+            def get_params(self, deep=True):
+                return {"n_components": self.n_components}
+                
+            def set_params(self, **params):
+                self.n_components = params["n_components"]
+                self.text_pca = PCA(n_components=self.n_components)
+                self.audio_pca = PCA(n_components=self.n_components)
+                print(f"\nTesting PCA threshold: {self.n_components} for both text and audio")
+                return self
+        
         pipeline = Pipeline([
-            ('preprocessor', ColumnTransformer(
-                transformers=[
-                    ('text', PCA(), text_cols),
-                    ('audio', PCA(), audio_cols),
-                ],
-                remainder='passthrough'
-            )),
+            ('preprocessor', SharedPCA()),
             ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
         
+        # Now we only need to search over one parameter
         param_grid = {
-            'preprocessor__text__n_components': pca_thresholds,
-            'preprocessor__audio__n_components': pca_thresholds
+            'preprocessor__n_components': pca_thresholds
         }
         
         grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='r2')
         grid_search.fit(X, y_train)
         
+        best_threshold = grid_search.best_params_['preprocessor__n_components']
         return {
-            'best_pca_text': grid_search.best_params_['preprocessor__text__n_components'],
-            'best_pca_audio': grid_search.best_params_['preprocessor__audio__n_components'],
+            'best_pca_text': best_threshold,
+            'best_pca_audio': best_threshold,
             'score': grid_search.best_score_
         }
     
@@ -207,7 +230,7 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
 
 def process_voxel(args_tuple):
     # Unpack arguments
-    voxel, df_train = args_tuple
+    voxel, df_train, args = args_tuple
     
     return cv(
         df_train,
@@ -215,7 +238,7 @@ def process_voxel(args_tuple):
         args.alpha_values if args.step == 3 else None,
         args.pca_threshold if args.step == 2 else None,
         args.step,
-        args.fixed_alpha if args.step == 1 else None,
+        args.fixed_alpha if args.step in [1, 2] else None,  # Use fixed_alpha for both step 1 and 2
         args.step2_use_best_base if args.step == 2 else args.step3_use_best_base if args.step == 3 else False,
         args.step3_use_best_pca if args.step == 3 else False
     )
@@ -251,12 +274,13 @@ def main():
     voxel_list = list(np.ndindex(tuple(args.img_size)))
     
     # Load dataset once
-    participant_list = os.listdir(paths["data_path"])
+    participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(args.img_size), voxel_list, top_voxels_path)
+    top_voxels = top_voxels[0:100]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Method 2: Using multiprocessing Pool
@@ -264,7 +288,7 @@ def main():
 
     # Prepare arguments for each voxel - get voxel values beforehand
     process_args = [
-        (voxel, database_train.get_voxel_values(voxel))
+        (voxel, database_train.get_voxel_values(voxel), args)
         for voxel in top_voxels
     ]
 

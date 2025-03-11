@@ -81,6 +81,8 @@ class BaseDataset(Dataset):
                     statement = row["Statement"]
                     situation = row["Situation"]
                     evaluation = row["Evaluation_Score"]
+                    age = row["age"]
+                    genre = row["genre"]
                     fmri_file = f"{participant}_{task}_{index}_{statement[:-4]}.nii.gz"
                     fmri_path = os.path.join(self.fmri_data_path, participant, fmri_file)
                     
@@ -100,7 +102,9 @@ class BaseDataset(Dataset):
                         "fmri_data": img_pad,
                         "context_condition": context_cond,
                         "statement_condition": statement_cond,
-                        "evaluation": evaluation
+                        "evaluation": evaluation,
+                        "age": age,
+                        "gender": genre
                     })
         return base_data
     
@@ -123,11 +127,16 @@ class BaseDataset(Dataset):
             prosody = item["statement_condition"][-3:]
             task = item["task"]
             evaluation = item["evaluation"]
+            participant = item["participant"]
+            age = item["age"]
+            gender = item["gender"]
 
             if self.use_base_features:
                 final_data.append({
                     "context": context, "semantic": semantic, "prosody": prosody, 
-                    "task": task, "evaluation": evaluation, "fmri_value": fmri_value
+                    "task": task, "evaluation": evaluation, 
+                    "age": age, "gender": gender, "participant": participant,
+                    "fmri_value": fmri_value,
                 })  
             else:
                 final_data.append({"fmri_value": fmri_value})
@@ -144,9 +153,21 @@ class BaseDataset(Dataset):
         if self.use_base_features:
             df = pd.DataFrame(final_data)
             df.reset_index(drop=True, inplace=True)
-            categorical_cols = df.columns[:4]  # First 4 columns are categorical
+            
+            # Define categorical columns (including participant)
+            categorical_cols = ['context', 'semantic', 'prosody', 'task', 'gender', 'participant']
+            
+
+            # One-hot encode categorical variables
             df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
-            df["evaluation"] = df["evaluation"].fillna(df["evaluation"].median())
+            
+            # Handle evaluation as ordinal - normalize to [0,1] range
+            df['evaluation'] = df['evaluation'].fillna(df['evaluation'].median())
+            df['evaluation'] = (df['evaluation'] - df['evaluation'].min()) / (df['evaluation'].max() - df['evaluation'].min())
+            
+            # Scale age (continuous variable)
+            df['age'] = self.scaler.fit_transform(df[['age']])
+
         else:
             df = pd.DataFrame(final_data)
 
