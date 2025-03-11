@@ -274,13 +274,12 @@ def main():
     voxel_list = list(np.ndindex(tuple(args.img_size)))
     
     # Load dataset once
-    participant_list = os.listdir(paths["data_path"])[0:10]
+    participant_list = os.listdir(paths["data_path"])
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(args.img_size), voxel_list, top_voxels_path)
-    top_voxels = top_voxels[0:100]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Method 2: Using multiprocessing Pool

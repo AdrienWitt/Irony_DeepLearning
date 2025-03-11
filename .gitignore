@@ -1,2 +1,4 @@
 data/
 envs/
+cv_results/
+request.sh
