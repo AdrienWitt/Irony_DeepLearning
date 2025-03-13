@@ -157,13 +157,24 @@ for file_type in files_type:
                scans_jitter = fmri_normalized[..., start_scan_jitter:end_scan_jitter].mean(axis = 3)
                file_jitter = nib.Nifti1Image(scans_jitter, affine, header)
                filename_jitter = f'{participant}_{task}_{i}_jitter'
+               #################################################################
+               end_evaluation = row['Real_Time_End_Evaluation']
+               end_scan_evaluation = round(end_evaluation / 0.65)
 
+               scans_stat_eval = fmri_normalized[..., start_scan_statement:end_scan_evaluation].mean(axis = 3)
+               file_stat_eval = nib.Nifti1Image(scans_stat_eval, affine, header)
+               filename_stat_eval = f'{participant}_{task}_{i}_{statement[:-4]}_eval'
+
+               
                subj_dir = os.path.join(output_dir_fmri, participant)
                if not os.path.exists(subj_dir):
                    os.makedirs(subj_dir)
                #nib.save(file_context, os.path.join(subj_dir,filename_context +".nii.gz"))
-               nib.save(file_statement, os.path.join(subj_dir,filename_statement +".nii.gz"))
+               #nib.save(file_statement, os.path.join(subj_dir,filename_statement +".nii.gz"))
                #nib.save(file_jitter, os.path.join(subj_dir,filename_jitter +".nii.gz"))
+               nib.save(file_stat_eval, os.path.join(subj_dir,filename_stat_eval +".nii.gz"))
+
+               
                
      
 

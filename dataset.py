@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 class BaseDataset(Dataset):
-    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), pca_threshold = 0.95, **kwargs):
+    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), pca_threshold = 0.50, **kwargs):
         super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path

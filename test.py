@@ -8,17 +8,20 @@ import analysis_helpers
 
 paths = analysis_helpers.get_paths()
 participant_list = os.listdir(paths["data_path"])[0:10]
-args = {
-    "pca_threshold": 0.50,
-    "use_base_features": True,
-    "use_text": True,
-    "use_audio": True,
-    "use_context": True,
-    "use_pca": True,
-    "embeddings_text_path": paths["embeddings_text_path"],
-    "embeddings_audio_path": paths["embeddings_audio_path"]
-}
+
+# Define args as a class-like object
+class Args:
+    img_size = (75, 92, 77)
+    pca_threshold = 0.90
+    use_base_features = True
+    use_text = True
+    use_audio = True
+    use_context = False
+    use_pca = True
+
+args = Args()
 
 database_train = analysis_helpers.load_dataset(args, paths, participant_list)
+data = database_train.set_data()
 
 

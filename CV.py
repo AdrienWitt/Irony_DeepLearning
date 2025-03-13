@@ -35,6 +35,9 @@ def parse_arguments():
                              help="Include context in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true",
                              help="Use PCA for embeddings (default: False)")
+    dataset_group.add_argument("--pca_threshold", type=float, default=0.50,
+                             help="PCA threshold for dataset (default: 0.50)")
+
 
     # **Analysis-related arguments**
     analysis_group = parser.add_argument_group("Analysis Arguments")
@@ -47,20 +50,26 @@ def parse_arguments():
                            help="Fixed alpha value for base features comparison (default: 100.0)")
     
     step2_group = parser.add_argument_group("Step 2: PCA Threshold Optimization")
-    step2_group.add_argument("--pca_threshold", type=float, nargs='+', default=[0.50, 0.60, 0.70, 0.80],
-                           help="List of explained variance thresholds for PCA (default: [0.50, 0.60, 0.70, 0.80])")
     step2_group.add_argument("--step2_use_best_base", action="store_true",
                            help="Use the best base features configuration from step 1 (default: False)")
+    step2_group.add_argument("--pca_thresholds", type=float, nargs='+', default=[0.50, 0.60, 0.70, 0.80],
+                            help="List of PCA thresholds for optimization (default: [0.50, 0.60, 0.70, 0.80])")
     
     step3_group = parser.add_argument_group("Step 3: Alpha Optimization")
-    step3_group.add_argument("--alpha_values", type=float, nargs='+', default=[10, 100, 1000, 5000],
-                           help="List of alpha values for Ridge regression (default: [10, 100, 1000, 5000])")
+    step3_group.add_argument("--alpha_values", type=float, nargs='+', default=[1, 5, 10, 50, 100],
+                           help="List of alpha values for Ridge regression (default: [1, 5, 10, 50, 100])")
     step3_group.add_argument("--step3_use_best_pca", action="store_true",
                            help="Use the best PCA threshold from step 2 (default: False)")
     step3_group.add_argument("--step3_use_best_base", action="store_true",
                            help="Use the best base features configuration from step 1 (default: False)")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # If pca_threshold is a list, use the first value for the dataset
+    if isinstance(args.pca_threshold, list):
+        args.pca_threshold = args.pca_threshold[0]
+    
+    return args
 
 
 def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, use_best_base=False, use_best_pca=False):
@@ -121,6 +130,10 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
         # Select appropriate feature set
         X = X_train if use_base else X_train[embedding_cols]
         
+        print(f"\nInitial number of columns: {X.shape[1]}")
+        print(f"Number of text columns: {len(text_cols)}")
+        print(f"Number of audio columns: {len(audio_cols)}")
+        
         # Create a custom transformer that applies PCA with same threshold to both text and audio
         class SharedPCA:
             def __init__(self, n_components=0.5):
@@ -153,6 +166,9 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
                 
                 # Combine all features
                 result = np.hstack([text_transformed, audio_transformed, other_features])
+                print(f"Number of columns after PCA: {result.shape[1]}")
+                print(f"Number of text PCA components: {text_transformed.shape[1]}")
+                print(f"Number of audio PCA components: {audio_transformed.shape[1]}")
                 return result
                 
             def get_params(self, deep=True):
@@ -193,28 +209,11 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
             use_base = prev_results['with_base_score'].mean() > prev_results['without_base_score'].mean()
         else:
             use_base = True
-        
-        if use_best_pca:
-            prev_results_path = os.path.join(paths["results_path"], "step2_results.csv")
-            prev_results = pd.read_csv(prev_results_path)
-            best_pca_text = prev_results['best_pca_text'].mode()[0]
-            best_pca_audio = prev_results['best_pca_audio'].mode()[0]
-        else:
-            best_pca_text = pca_thresholds[0]
-            best_pca_audio = pca_thresholds[0]
-        
+               
         # Select appropriate feature set
-        X = X_train if use_base else X_train[embedding_cols]
-        
-        # Define pipeline with fixed PCA components
+        X = X_train if use_base else X_train[embedding_cols]        
+        # Define pipeline without PCA (since it's already done in the dataset)
         pipeline = Pipeline([
-            ('preprocessor', ColumnTransformer(
-                transformers=[
-                    ('text', PCA(n_components=best_pca_text), text_cols),
-                    ('audio', PCA(n_components=best_pca_audio), audio_cols),
-                ],
-                remainder='passthrough'
-            )),
             ('ridge', Ridge(random_state=random_seed))
         ])
         
@@ -236,7 +235,7 @@ def process_voxel(args_tuple):
         df_train,
         voxel,
         args.alpha_values if args.step == 3 else None,
-        args.pca_threshold if args.step == 2 else None,
+        args.pca_thresholds if args.step == 2 else None,
         args.step,
         args.fixed_alpha if args.step in [1, 2] else None,  # Use fixed_alpha for both step 1 and 2
         args.step2_use_best_base if args.step == 2 else args.step3_use_best_base if args.step == 3 else False,
@@ -261,7 +260,7 @@ def main():
     if args.step == 1:
         print(f"- Fixed alpha: {args.fixed_alpha}")
     elif args.step == 2:
-        print(f"- PCA thresholds: {args.pca_threshold}")
+        print(f"- PCA thresholds: {args.pca_thresholds}")
         print(f"- Use best base features config: {args.step2_use_best_base}")
     else:  # step 3
         print(f"- Alpha values: {args.alpha_values}")
