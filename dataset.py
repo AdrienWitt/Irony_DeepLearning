@@ -83,7 +83,7 @@ class BaseDataset(Dataset):
                     evaluation = row["Evaluation_Score"]
                     age = row["age"]
                     genre = row["genre"]
-                    fmri_file = f"{participant}_{task}_{index}_{statement[:-4]}.nii.gz"
+                    fmri_file = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement_weighted.nii.gz'
                     fmri_path = os.path.join(self.fmri_data_path, participant, fmri_file)
                     
                     # Extract context and statement conditions
@@ -135,8 +135,8 @@ class BaseDataset(Dataset):
                 final_data.append({
                     "context": context, "semantic": semantic, "prosody": prosody, 
                     "task": task, "evaluation": evaluation, 
-                    "age": age, "gender": gender, "participant": participant,
-                    "fmri_value": fmri_value,
+                    "age": age, "gender": gender,
+                    "fmri_value": fmri_value, "participant" : participant
                 })  
             else:
                 final_data.append({"fmri_value": fmri_value})

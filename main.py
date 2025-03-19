@@ -9,14 +9,14 @@ from joblib import Parallel, delayed
 import dataset  
 import analysis_helpers
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-args = argparse.Namespace(
-    img_size=[75, 92, 77],
-    use_audio = True,
-    use_text = False,
-    use_context = False,
-    use_base_features=True,
-    use_pca=True, num_jobs = 15, alpha = 1, pca_threshold = 0.5)
+# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+# args = argparse.Namespace(
+#     img_size=[75, 92, 77],
+#     use_audio = True,
+#     use_text = True,
+#     use_base_features=True,
+#     use_context = False,
+#     use_pca=True, num_jobs = 15, alpha = 0.1, pca_threshold = 0.6)
 
 
 def parse_arguments():
@@ -36,7 +36,7 @@ def parse_arguments():
                                help="Include context in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
                                help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
-    dataset_group.add_argument("--pca_threshold", type=float, nargs='+', default=[0.70, 0.80, 0.90],
+    dataset_group.add_argument("--pca_threshold", type=float, nargs='+', default=0.60,
                            help="List of explained variance thresholds for text PCA (default: [0.90, 0.95, 0.99]).")
 
     # **Analysis-related arguments**
@@ -49,27 +49,47 @@ def parse_arguments():
     return parser.parse_args()
 
 
-# Function to perform voxel-wise Ridge regression
-def voxel_analysis(voxel, database_train, database_test, alpha):
-    """Train Ridge regression and compute correlation for a given voxel."""
-    df_train = database_train.get_voxel_values(voxel)
-    df_train = df_train.sample(frac=1, random_state=42).reset_index(drop=True)
+def voxel_analysis(voxel, df_train, alpha):
+    """Train Ridge regression and compute correlation for a given voxel using 5-fold CV."""
+    # Create a unique random seed from voxel coordinates
+    random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
+    
+    # Get voxel values and prepare data
     X_train = df_train.drop(columns=["fmri_value"]).values
     y_train = df_train["fmri_value"].values  
 
-    df_test = database_test.get_voxel_values(voxel)
-    X_test = df_test.drop(columns=["fmri_value"]).values
-    y_test = df_test["fmri_value"].values  
+    # Perform 5-fold cross-validation
+    from sklearn.model_selection import KFold
+    kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
+    cv_scores = []
+    
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X_train)):
+        X_train_fold = X_train[train_idx]
+        y_train_fold = y_train[train_idx]
+        X_val_fold = X_train[val_idx]
+        y_val_fold = y_train[val_idx]
+        
+        # Use a different random seed for the model
+        model_seed = random_seed + fold
+        ridge = Ridge(alpha=alpha, random_state=model_seed)
+        ridge.fit(X_train_fold, y_train_fold)
+        y_pred_fold = ridge.predict(X_val_fold)
+        
+        correlation = pearsonr(y_pred_fold, y_val_fold)[0] if np.std(y_val_fold) > 0 else 0
+        cv_scores.append(correlation)
+    
+    # Use mean CV score
+    mean_correlation = np.mean(cv_scores)
+    print(f"{voxel} {mean_correlation}")
+    return voxel, mean_correlation
 
-    ridge = Ridge(alpha=alpha)
-    ridge.fit(X_train, y_train)
-    y_pred = ridge.predict(X_test)
 
-    correlation = pearsonr(y_pred, y_test)[0] if np.std(y_test) > 0 else 0
-    return voxel, correlation
+def process_voxel(args_tuple):
+    # Unpack arguments
+    voxel, df_train, alpha = args_tuple
+    return voxel_analysis(voxel, df_train, alpha)
 
 
-# Main function
 def main():
     start_time = time.time()  # Start timing
 
@@ -77,39 +97,52 @@ def main():
 
     print(f"Running with settings:\n"
           f"- Image size: {args.img_size}\n"
-          f"- Mode: {args.mode}\n"
           f"- Use base features: {args.use_base_features}\n"
-          f"- n_component_text: {args.n_component_text}\n"
-          f"- n_component_audio: {args.n_component_audio}\n"
+          f"- Use text: {args.use_text}\n"
+          f"- Use audio: {args.use_audio}\n"
+          f"- Use context: {args.use_context}\n"
+          f"- Use PCA: {args.use_pca}\n"
+          f"- PCA threshold: {args.pca_threshold}\n"
           f"- Ridge alpha: {args.alpha}\n"
           f"- Number of parallel jobs: {args.num_jobs}")
 
     paths = analysis_helpers.get_paths()
-    participant_list = os.listdir(paths["data_path"])
-    train_participants, test_participants = train_test_split(participant_list, test_size=0.2, random_state=42)
-    database_train = analysis_helpers.load_dataset(args, paths, train_participants)
-    database_test = analysis_helpers.load_dataset(args, paths, test_participants)
+    participant_list = os.listdir(paths["data_path"])[0:10]
+    database_train = analysis_helpers.load_dataset(args, paths, participant_list)
 
     # Generate voxel list dynamically
     voxel_list = list(np.ndindex(tuple(args.img_size)))
+    voxel_list = voxel_list[0:500]
 
     # Initialize correlation map
     correlation_map = np.zeros(tuple(args.img_size))
 
-    # Parallel processing for all voxels
-    results = Parallel(n_jobs=args.num_jobs)(
-        delayed(voxel_analysis)(voxel, database_train, database_test, args.alpha) for voxel in voxel_list
-    )
+    # Method 2: Using multiprocessing Pool
+    from multiprocessing import Pool
+
+    # Prepare arguments for each voxel
+    process_args = [
+        (voxel, database_train.get_voxel_values(voxel), args.alpha)
+        for voxel in voxel_list
+    ]
+
+    # Create a pool of workers and map the work
+    with Pool(processes=args.num_jobs) as pool:
+        results = pool.map(process_voxel, process_args)
 
     # Store correlations and update the fMRI-sized array
     correlations = []  # List to store correlation values
     for voxel, corr in results:
         correlation_map[voxel] = corr
-        correlations.append(corr)  # Collect correlations for mean calculation
+        correlations.append(corr)
 
-    # Compute the mean correlation
+    # Compute and print correlation statistics
     mean_correlation = np.mean(correlations)
+    print(f"\nCorrelation Statistics:")
     print(f"Mean correlation: {mean_correlation:.4f}")
+    print(f"Std correlation: {np.std(correlations):.4f}")
+    print(f"Max correlation: {np.max(correlations):.4f}")
+    print(f"Min correlation: {np.min(correlations):.4f}")
     
     features_used = []
     if args.use_text:
@@ -124,16 +157,15 @@ def main():
     # Create a feature string (e.g., "text_audio" if both are enabled)
     feature_str = "_".join(features_used) if features_used else "nofeatures"
     
-    # Modify the result file name
+    # Save correlation map
     result_file = os.path.join(
         paths["results_path"],
-        f"correlation_map_{args.mode}_{feature_str}.npy")
-
+        f"correlation_map_{feature_str}.npy")
     np.save(result_file, correlation_map)
+    print(f"\nCorrelation map saved as '{result_file}'")
 
     end_time = time.time()  # Stop timing
     elapsed_time = end_time - start_time
-    print(f"Correlation map saved as '{result_file}'")
     print(f"Total execution time: {elapsed_time:.2f} seconds")
 
 # Run the script

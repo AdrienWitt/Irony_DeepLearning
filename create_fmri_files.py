@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Sun Dec  8 12:01:04 2024
+
+@author: adywi
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Sun Dec  1 15:43:16 2024
 
 @author: adywi
@@ -21,7 +28,6 @@ folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
 files_type = ['wrMF']
 output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri'
-output_dir_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\audio'
 
 def select_files(root_folder, files_type):
     participant_folders = glob.glob(os.path.join(root_folder, 'p*'))
@@ -103,25 +109,73 @@ for file_type in files_type:
                statement = row['Statement']
                task = row['task']
                jitter = row['Jitter']
-               start = row['Real_Time_Onset_Context']
-               end = row['Real_Time_End_Statement']
+               time_context = row['Time_Context']               
+               time_statement = row['Time_Statement']
+
                
                ## Fmri
-               start_scan = round(start / 0.65)
-               end_scan = round(end / 0.65)
-               scans = fmri_normalized[..., start_scan:end_scan]
-               file = nib.Nifti1Image(scans, affine, header)
-               filename = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}'
+
+               start_context = row['Real_Time_Onset_Context']
+               end_context = row['Real_Time_End_Context']
+               
+               if time_context < 0.65:
+                   start_scan_context = round(start_context / 0.65)
+                   end_scan_context = start_scan_context + 1
+               else:
+                   start_scan_context = round(start_context / 0.65)
+                   end_scan_context = round(end_context / 0.65)
+                   
+               scans_context = fmri_normalized[..., start_scan_context:end_scan_context].mean(axis = 3)
+               file_context = nib.Nifti1Image(scans_context, affine, header)
+               filename_context = f'{participant}_{task}_{i}_{context[:-4]}'
+               
+               start_statement = row['Real_Time_Onset_Statement']
+               end_statement = row['Real_Time_End_Statement']
+               
+               if time_statement < 0.65:
+                   start_scan_statement = round(start_statement / 0.65)
+                   end_scan_statement = start_scan_statement + 1
+               else:
+                   start_scan_statement = round(start_statement / 0.65)
+                   end_scan_statement = round(end_statement / 0.65)
+               
+               scans_statement = fmri_normalized[..., start_scan_statement:end_scan_statement].mean(axis = 3)
+               file_statement = nib.Nifti1Image(scans_statement, affine, header)
+               filename_statement = f'{participant}_{task}_{i}_{statement[:-4]}'
+               
+               start_jitter = row['Real_Time_End_Context']
+               end_jitter = row['Real_Time_Onset_Statement']
+               
+               if jitter < 0.65:
+                   start_scan_jitter = round(start_jitter / 0.65)
+                   end_scan_jitter = start_scan_jitter + 1
+               else:
+                   start_scan_jitter = round(start_jitter / 0.65)
+                   end_scan_jitter = round(end_jitter / 0.65)
+               
+               scans_jitter = fmri_normalized[..., start_scan_jitter:end_scan_jitter].mean(axis = 3)
+               file_jitter = nib.Nifti1Image(scans_jitter, affine, header)
+               filename_jitter = f'{participant}_{task}_{i}_jitter'
+               
+               #################################################################
+               end_evaluation = row['Real_Time_End_Evaluation']
+               end_scan_evaluation = round(end_evaluation / 0.65)
+
+               scans_stat_eval = fmri_normalized[..., start_scan_statement:end_scan_evaluation].mean(axis = 3)
+               file_stat_eval = nib.Nifti1Image(scans_stat_eval, affine, header)
+               filename_stat_eval = f'{participant}_{task}_{i}_{statement[:-4]}_eval'
+
+               
                subj_dir = os.path.join(output_dir_fmri, participant)
                if not os.path.exists(subj_dir):
                    os.makedirs(subj_dir)
-               nib.save(file, os.path.join(subj_dir,filename +".nii.gz"))
+               #nib.save(file_context, os.path.join(subj_dir,filename_context +".nii.gz"))
+               #nib.save(file_statement, os.path.join(subj_dir,filename_statement +".nii.gz"))
+               #nib.save(file_jitter, os.path.join(subj_dir,filename_jitter +".nii.gz"))
+               nib.save(file_stat_eval, os.path.join(subj_dir,filename_stat_eval +".nii.gz"))
+
                
-               ## Audio
-               merged_audio = audiofile_merger(context, statement, jitter)
-               subj_dir = os.path.join(output_dir_audio, participant)
-               if not os.path.exists(subj_dir):
-                   os.makedirs(subj_dir)
-               merged_audio.export(os.path.join(subj_dir, filename +".wav"), format="wav")
+               
+     
 
      

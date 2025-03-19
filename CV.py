@@ -56,8 +56,8 @@ def parse_arguments():
                             help="List of PCA thresholds for optimization (default: [0.50, 0.60, 0.70, 0.80])")
     
     step3_group = parser.add_argument_group("Step 3: Alpha Optimization")
-    step3_group.add_argument("--alpha_values", type=float, nargs='+', default=[1, 5, 10, 50, 100],
-                           help="List of alpha values for Ridge regression (default: [1, 5, 10, 50, 100])")
+    step3_group.add_argument("--alpha_values", type=float, nargs='+', default=[0.1, 0.5, 1, 5],
+                           help="List of alpha values for Ridge regression (default: [0.1, 0.5, 1, 5])")
     step3_group.add_argument("--step3_use_best_pca", action="store_true",
                            help="Use the best PCA threshold from step 2 (default: False)")
     step3_group.add_argument("--step3_use_best_base", action="store_true",
@@ -140,7 +140,6 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
                 self.n_components = n_components
                 self.text_pca = PCA(n_components=n_components)
                 self.audio_pca = PCA(n_components=n_components)
-                print(f"\nTesting PCA threshold: {n_components} for both text and audio")
                 
             def fit(self, X, y=None):
                 # Split features
@@ -166,9 +165,6 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
                 
                 # Combine all features
                 result = np.hstack([text_transformed, audio_transformed, other_features])
-                print(f"Number of columns after PCA: {result.shape[1]}")
-                print(f"Number of text PCA components: {text_transformed.shape[1]}")
-                print(f"Number of audio PCA components: {audio_transformed.shape[1]}")
                 return result
                 
             def get_params(self, deep=True):
@@ -274,11 +270,13 @@ def main():
     
     # Load dataset once
     participant_list = os.listdir(paths["data_path"])
+    #participant_list = participant_list[:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(args.img_size), voxel_list, top_voxels_path)
+    #top_voxels = top_voxels[:10]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Method 2: Using multiprocessing Pool

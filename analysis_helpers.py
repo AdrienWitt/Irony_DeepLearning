@@ -9,10 +9,10 @@ def get_paths():
 
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri"),
+        "fmri_data_path": os.path.join(base_path, "data", "fmri", "weighted"),
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "results_path": os.path.join(base_path, "cv_results"),
+        "results_path": os.path.join(base_path, "results"),
     }
 
     os.makedirs(paths["results_path"], exist_ok=True)
