@@ -130,10 +130,6 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
         # Select appropriate feature set
         X = X_train if use_base else X_train[embedding_cols]
         
-        print(f"\nInitial number of columns: {X.shape[1]}")
-        print(f"Number of text columns: {len(text_cols)}")
-        print(f"Number of audio columns: {len(audio_cols)}")
-        
         # Create a custom transformer that applies PCA with same threshold to both text and audio
         class SharedPCA:
             def __init__(self, n_components=0.5):
@@ -174,7 +170,6 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
                 self.n_components = params["n_components"]
                 self.text_pca = PCA(n_components=self.n_components)
                 self.audio_pca = PCA(n_components=self.n_components)
-                print(f"\nTesting PCA threshold: {self.n_components} for both text and audio")
                 return self
         
         pipeline = Pipeline([
