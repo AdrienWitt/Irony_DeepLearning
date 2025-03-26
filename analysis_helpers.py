@@ -45,7 +45,8 @@ def load_dataset(args, paths, participant_list):
         "use_audio": args.use_audio,
         "use_context": args.use_context,
         "pca_threshold": args.pca_threshold,
-        "use_pca" : args.use_pca
+        "use_pca" : args.use_pca,
+        "use_umap" : args.use_umap
     }
 
     database = dataset.BaseDataset(participant_list=participant_list, **dataset_args)

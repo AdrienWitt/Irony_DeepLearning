@@ -17,7 +17,6 @@ output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_expe
    
 # fMRI parameters
 TR = 0.65  # Repetition time in seconds
-HRF_TAIL = 10  # Seconds to extend after statement end to capture HRF tail
 
 def select_files(root_folder, files_type):
     participant_folders = glob.glob(os.path.join(root_folder, 'p*'))
@@ -147,7 +146,5 @@ for file_type in files_type:
                 if not os.path.exists(subj_dir):
                     os.makedirs(subj_dir)
                 nib.save(file, os.path.join(subj_dir, filename + ".nii.gz"))
-
-
 
 print("Processing complete.")

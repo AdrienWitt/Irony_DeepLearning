@@ -35,6 +35,8 @@ def parse_arguments():
                              help="Include context in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true",
                              help="Use PCA for embeddings (default: False)")
+    dataset_group.add_argument("--use_umap", action="store_true",
+                             help="Use umaps for embeddings (default: False)")
     dataset_group.add_argument("--pca_threshold", type=float, default=0.50,
                              help="PCA threshold for dataset (default: 0.50)")
 
@@ -46,7 +48,7 @@ def parse_arguments():
     
     # Step-specific arguments
     step1_group = parser.add_argument_group("Step 1: Base Features Comparison")
-    step1_group.add_argument("--fixed_alpha", type=float, default=100.0,
+    step1_group.add_argument("--fixed_alpha", type=float, default=1,
                            help="Fixed alpha value for base features comparison (default: 100.0)")
     
     step2_group = parser.add_argument_group("Step 2: PCA Threshold Optimization")
@@ -265,13 +267,13 @@ def main():
     
     # Load dataset once
     participant_list = os.listdir(paths["data_path"])
-    # participant_list = participant_list[:10]
+    participant_list = participant_list[:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(args.img_size), voxel_list, top_voxels_path)
-    # top_voxels = top_voxels[:100]
+    top_voxels = top_voxels[:100]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Method 2: Using multiprocessing Pool

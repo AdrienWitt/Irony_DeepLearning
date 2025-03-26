@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 from pydub import AudioSegment
 import re
-import unidecode
 import whisper
 from collections import defaultdict
 import processing_helpers
@@ -41,7 +40,7 @@ create_text_cls(context_path, model_text, tokenizer_text, output_dir)
         
 # Create audio embeddings
 
-audio_data = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\audio"
+audio_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\audio"
 model = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-large-960h")
 processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
 output_dir = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\embeddings\audio"
@@ -61,7 +60,7 @@ def create_audio_embeddings(audio_path, model, processor, output_dir):
         avg_embedding_reshaped = avg_embedding.reshape(1,1024)
         np.save(os.path.join(output_dir, filename.replace('.wav', '_layers5-6.npy')), avg_embedding_reshaped)
     
-create_audio_embeddings(audio_data, model, processor, output_dir)    
+create_audio_embeddings(audio_path, model, processor, output_dir)    
     
 
            
