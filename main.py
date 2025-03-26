@@ -122,12 +122,13 @@ def main():
           f"- Number of parallel jobs: {args.num_jobs}")
 
     paths = analysis_helpers.get_paths()
-    participant_list = os.listdir(paths["data_path"])[0:10]
+    participant_list = os.listdir(paths["data_path"])
+    #participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Generate voxel list dynamically
     voxel_list = list(np.ndindex(tuple(args.img_size)))
-    voxel_list = voxel_list[0:500]
+    #voxel_list = voxel_list[0:500]
 
     # Initialize correlation maps (one for mean and one for individual folds)
     correlation_map_mean = np.zeros(tuple(args.img_size))
