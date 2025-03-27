@@ -80,6 +80,7 @@ def voxel_analysis(voxel, df_train, alpha):
         
         # Skip if no valid data in this fold
         if len(X_train_fold_filtered) == 0 or len(X_val_fold_filtered) == 0:
+            print(f"No valid data in fold {fold} for voxel {voxel}")
             cv_scores.append(0)  # Assign 0 correlation if no valid data
             continue
         
@@ -90,7 +91,13 @@ def voxel_analysis(voxel, df_train, alpha):
         
         # Predict and compute correlation
         y_pred_fold = ridge.predict(X_val_fold_filtered)
-        correlation = pearsonr(y_pred_fold, y_val_fold_filtered)[0] if np.std(y_val_fold_filtered) > 0 else 0
+        
+        if np.std(y_val_fold_filtered) > 0:
+            correlation = pearsonr(y_pred_fold, y_val_fold_filtered)[0]
+        else:
+            correlation = 0
+            print("standard deviation is 0")
+        
         cv_scores.append(correlation)
     
     mean_correlation = np.mean(cv_scores)
@@ -123,7 +130,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = os.listdir(paths["data_path"])[0:10]
+    participant_list = os.listdir(paths["data_path"])[0:20]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Generate voxel list dynamically
