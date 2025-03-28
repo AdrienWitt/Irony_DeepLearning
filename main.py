@@ -18,6 +18,9 @@ import analysis_helpers
 #     use_context = False,
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
+# voxel = (70, 70, 70)
+
+# df_train = database_train.get_voxel_values(voxel)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
@@ -58,6 +61,12 @@ def voxel_analysis(voxel, df_train, alpha):
     X = df_train.drop(columns=["fmri_value", "fmri_mask"]).values
     y = df_train["fmri_value"].values
     mask = df_train["fmri_mask"].values
+    
+    # Print data information for debugging
+    print(f"Data shape for voxel {voxel}: X={X.shape}, y={y.shape}, mask={mask.shape}")
+    print(f"First few rows of X: {X[:5]}")
+    print(f"First few values of y: {y[:5]}")
+    print(f"First few values of mask: {mask[:5]}")
     
     # Filter data based on mask BEFORE cross-validation
     X_filtered = X[mask == 1]
