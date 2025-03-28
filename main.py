@@ -16,7 +16,7 @@ import analysis_helpers
 #     use_text = True,
 #     use_base_features=True,
 #     use_context = False,
-#     use_pca=True, num_jobs = 15, alpha = 0.1, pca_threshold = 0.6, use_umap = False)
+#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 
 def parse_arguments():
@@ -25,21 +25,21 @@ def parse_arguments():
     # **Dataset-related arguments**
     dataset_group = parser.add_argument_group("Dataset Arguments")
     dataset_group.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
-                               help="Size of fMRI images as three integers (default: 75 92 77).")
+                                help="Size of fMRI images as three integers (default: 75 92 77).")
     dataset_group.add_argument("--use_base_features", action="store_true", 
-                               help="Include base features in dataset (default: False).")
+                                help="Include base features in dataset (default: False).")
     dataset_group.add_argument("--use_text", action="store_true", 
-                               help="Include text in dataset (default: False).")
+                                help="Include text in dataset (default: False).")
     dataset_group.add_argument("--use_audio", action="store_true", 
-                               help="Include audio in dataset (default: False).")
+                                help="Include audio in dataset (default: False).")
     dataset_group.add_argument("--use_context", action="store_true", 
-                               help="Include context in dataset (default: False).")
+                                help="Include context in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
-                               help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
+                                help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
     dataset_group.add_argument("--use_umap", action="store_true",
-                               help="Use UMAP for dimensionality reduction (default: False).")
+                                help="Use UMAP for dimensionality reduction (default: False).")
     dataset_group.add_argument("--pca_threshold", type=float, default=0.60,
-                           help="Explained variance threshold for PCA (default: 0.60).")
+                            help="Explained variance threshold for PCA (default: 0.60).")
 
     # **Analysis-related arguments**
     analysis_group = parser.add_argument_group("Analysis Arguments")
@@ -54,49 +54,45 @@ def voxel_analysis(voxel, df_train, alpha):
     """Train Ridge regression and compute correlation for a given voxel using 5-fold CV."""
     random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
         
+    # Extract features, target, and mask
     X = df_train.drop(columns=["fmri_value", "fmri_mask"]).values
     y = df_train["fmri_value"].values
     mask = df_train["fmri_mask"].values
     
-    # Perform 5-fold cross-validation
+    # Filter data based on mask BEFORE cross-validation
+    X_filtered = X[mask == 1]
+    y_filtered = y[mask == 1]
+    
+    # Check if there's any valid data after filtering
+    if len(X_filtered) == 0:
+        print(f"No valid data for voxel {voxel} after filtering")
+        return voxel, [0] * 5, 0  # Return zeros for all folds and mean if no valid data
+    
+    # Perform 5-fold cross-validation on filtered data
     from sklearn.model_selection import KFold
     kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
     cv_scores = []
     
-    for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
-        # Split data
-        X_train_fold = X[train_idx]
-        y_train_fold = y[train_idx]
-        mask_train_fold = mask[train_idx]
-        X_val_fold = X[val_idx]
-        y_val_fold = y[val_idx]
-        mask_val_fold = mask[val_idx]
-        
-        # Filter padded voxels within each fold
-        X_train_fold_filtered = X_train_fold[mask_train_fold == 1]
-        y_train_fold_filtered = y_train_fold[mask_train_fold == 1]
-        X_val_fold_filtered = X_val_fold[mask_val_fold == 1]
-        y_val_fold_filtered = y_val_fold[mask_val_fold == 1]
-        
-        # Skip if no valid data in this fold
-        if len(X_train_fold_filtered) == 0 or len(X_val_fold_filtered) == 0:
-            print(f"No valid data in fold {fold} for voxel {voxel}")
-            cv_scores.append(0)  # Assign 0 correlation if no valid data
-            continue
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X_filtered)):
+        # Split filtered data
+        X_train_fold = X_filtered[train_idx]
+        y_train_fold = y_filtered[train_idx]
+        X_val_fold = X_filtered[val_idx]
+        y_val_fold = y_filtered[val_idx]
         
         # Train model
         model_seed = random_seed + fold
         ridge = Ridge(alpha=alpha, random_state=model_seed)
-        ridge.fit(X_train_fold_filtered, y_train_fold_filtered)
+        ridge.fit(X_train_fold, y_train_fold)
         
         # Predict and compute correlation
-        y_pred_fold = ridge.predict(X_val_fold_filtered)
+        y_pred_fold = ridge.predict(X_val_fold)
         
-        if np.std(y_val_fold_filtered) > 0:
-            correlation = pearsonr(y_pred_fold, y_val_fold_filtered)[0]
+        if np.std(y_val_fold) > 0:
+            correlation = pearsonr(y_pred_fold, y_val_fold)[0]
         else:
             correlation = 0
-            print("standard deviation is 0")
+            print(f"Standard deviation is 0 in fold {fold} for voxel {voxel}")
         
         cv_scores.append(correlation)
     

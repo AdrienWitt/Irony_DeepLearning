@@ -71,7 +71,7 @@ class BaseDataset(Dataset):
         return y
 
     def load_and_pad(self, image_path):
-        img = nib.load(image_path).get_fdata()
+        img = nib.load(image_path).get_fdata(dtype=np.float64)
         mask = (img != 0).astype(np.uint8)  # 1 for real data, 0 for background
         img_padded = self.pad_to_max(img)
         mask_padded = self.pad_to_max(mask)

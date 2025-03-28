@@ -33,11 +33,12 @@ import nibabel as nib
 path1 = paths["fmri_data_path"]
 path2 = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\mean"
 
-for foldername, subfolders, filenames in os.walk(path2):
+for foldername, subfolders, filenames in os.walk(path1):
     for filename in filenames:
         file_path = os.path.join(foldername, filename)
         nii = nib.load(file_path).get_fdata()
         print(nii.dtype)
+        print(nii[50,50,50])
         
         
 import numpy as np 
