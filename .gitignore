@@ -2,3 +2,4 @@ data/
 envs/
 cv_results/
 request.sh
+__pycache__/
