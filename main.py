@@ -57,6 +57,7 @@ def voxel_analysis(voxel, df_train, alpha):
     """Train Ridge regression and compute correlation for a given voxel using 5-fold CV."""
     random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
         
+    print(f"df_train shape: {df_train.shape}")
     # Extract features, target, and mask
     X = df_train.drop(columns=["fmri_value", "fmri_mask"]).values
     y = df_train["fmri_value"].values
@@ -137,8 +138,7 @@ def main():
     participant_list = os.listdir(paths["data_path"])
     #participant_list = os.listdir(paths["data_path"])[0:30]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
-    
-    # Generate voxel list dynamically
+        # Generate voxel list dynamically
     voxel_list = list(np.ndindex(tuple(args.img_size)))
     #voxel_list = voxel_list[40000:41000]
 
