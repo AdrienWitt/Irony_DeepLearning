@@ -18,7 +18,7 @@ import analysis_helpers
 #     use_context = False,
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
-# voxel = (70, 70, 70)
+# voxel = (62, 83, 54)
 
 # df_train = database_train.get_voxel_values(voxel)
 
