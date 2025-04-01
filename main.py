@@ -18,7 +18,7 @@ import analysis_helpers
 #     use_context = False,
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
-# voxel = (62, 83, 54)
+# voxel = (62, 83, 58)
 
 # df_train = database_train.get_voxel_values(voxel)
 
@@ -62,13 +62,7 @@ def voxel_analysis(voxel, df_train, alpha):
     X = df_train.drop(columns=["fmri_value", "fmri_mask"]).values
     y = df_train["fmri_value"].values
     mask = df_train["fmri_mask"].values
-    
-    # Print data information for debugging
-    print(f"Data shape for voxel {voxel}: X={X.shape}, y={y.shape}, mask={mask.shape}")
-    print(f"First few rows of X: {X[:5]}")
-    print(f"First few values of y: {y[:5]}")
-    print(f"First few values of mask: {mask[:5]}")
-    
+        
     # Filter data based on mask BEFORE cross-validation
     X_filtered = X[mask == 1]
     y_filtered = y[mask == 1]
@@ -111,11 +105,8 @@ def voxel_analysis(voxel, df_train, alpha):
     return voxel, cv_scores, mean_correlation
 
 
-def process_voxel(args_tuple):
-    # Unpack arguments
-    voxel, df_train, alpha = args_tuple
+def process_voxel(voxel, df_train, alpha):
     return voxel_analysis(voxel, df_train, alpha)
-
 
 def main():
     start_time = time.time()  # Start timing
@@ -136,11 +127,11 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = os.listdir(paths["data_path"])[0:30]
+    #participant_list = os.listdir(paths["data_path"])[30:50]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
-        # Generate voxel list dynamically
+    # Generate voxel list dynamically
     voxel_list = list(np.ndindex(tuple(args.img_size)))
-    #voxel_list = voxel_list[40000:41000]
+    voxel_list = voxel_list[40000:40050]
 
     # Initialize correlation maps (one for mean and one for individual folds)
     correlation_map_mean = np.zeros(tuple(args.img_size))
@@ -149,15 +140,8 @@ def main():
     # Method 2: Using multiprocessing Pool
     from multiprocessing import Pool
 
-    # Prepare arguments for each voxel
-    process_args = [
-        (voxel, database_train.get_voxel_values(voxel), args.alpha)
-        for voxel in voxel_list
-    ]
-
-    # Create a pool of workers and map the work
     with Pool(processes=args.num_jobs) as pool:
-        results = pool.map(process_voxel, process_args)
+        results = pool.starmap(process_voxel, [(voxel, database_train.get_voxel_values(voxel), args.alpha) for voxel in voxel_list])
 
     # Store correlations and update the fMRI-sized arrays
     correlations = []  # List to store mean correlation values

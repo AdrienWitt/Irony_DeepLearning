@@ -71,6 +71,10 @@ class BaseDataset(Dataset):
         return y
 
     def load_and_pad(self, image_path):
+        print(f"Loading image from: {image_path}")  # Debugging: print the image path
+        if not os.path.exists(image_path):
+            print(f"File does not exist: {image_path}")  # Debugging: check if file exists
+            return None, None
         img = nib.load(image_path).get_fdata(dtype=np.float64)
         mask = (img != 0).astype(np.uint8)  # 1 for real data, 0 for background
         img_padded = self.pad_to_max(img)
@@ -104,6 +108,8 @@ class BaseDataset(Dataset):
                     context_cond = parts[0]
                     statement_cond = parts[1]                    
                     img_pad, mask_pad = self.load_and_pad(fmri_path)
+                    if img_pad is None or mask_pad is None:
+                        continue  # Skip if the image or mask could not be loaded
                
                     # Append the processed data
                     base_data.append({
