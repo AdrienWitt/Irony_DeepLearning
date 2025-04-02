@@ -131,17 +131,25 @@ def main():
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     # Generate voxel list dynamically
     voxel_list = list(np.ndindex(tuple(args.img_size)))
-    voxel_list = voxel_list[40000:40050]
+    #voxel_list = voxel_list[400:600]
 
     # Initialize correlation maps (one for mean and one for individual folds)
     correlation_map_mean = np.zeros(tuple(args.img_size))
     correlation_map_folds = np.zeros(tuple(args.img_size) + (5,))  # Shape: (75, 92, 77, 5)
 
-    # Method 2: Using multiprocessing Pool
-    from multiprocessing import Pool
+    print(f"Processing {len(voxel_list)} voxels")
 
-    with Pool(processes=args.num_jobs) as pool:
-        results = pool.starmap(process_voxel, [(voxel, database_train.get_voxel_values(voxel), args.alpha) for voxel in voxel_list])
+    # Method 2: Using multiprocessing Pool
+    #from multiprocessing import Pool
+    #with Pool(processes=args.num_jobs) as pool:
+        #results = pool.starmap(process_voxel, [(voxel, database_train.get_voxel_values(voxel), args.alpha) for voxel in voxel_list])
+
+    from joblib import Parallel, delayed
+
+    results = Parallel(n_jobs=args.num_jobs)(
+        delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), args.alpha) 
+        for voxel in voxel_list
+    )
 
     # Store correlations and update the fMRI-sized arrays
     correlations = []  # List to store mean correlation values
