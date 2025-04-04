@@ -22,6 +22,9 @@ import analysis_helpers
 
 # df_train = database_train.get_voxel_values(voxel)
 
+# Set a reliable temporary directory for joblib
+os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
 
@@ -56,9 +59,7 @@ def parse_arguments():
 def voxel_analysis(voxel, df_train, alpha):
     """Train Ridge regression and compute correlation for a given voxel using 5-fold CV."""
     random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
-        
-    print(f"df_train shape: {df_train.shape}")
-    # Extract features, target, and mask
+            # Extract features, target, and mask
     X = df_train.drop(columns=["fmri_value", "fmri_mask"]).values
     y = df_train["fmri_value"].values
     mask = df_train["fmri_mask"].values
@@ -66,6 +67,8 @@ def voxel_analysis(voxel, df_train, alpha):
     # Filter data based on mask BEFORE cross-validation
     X_filtered = X[mask == 1]
     y_filtered = y[mask == 1]
+
+    print("X_filtered : ", len(X_filtered))
     
     # Check if there's any valid data after filtering
     if len(X_filtered) == 0:
@@ -139,17 +142,27 @@ def main():
 
     print(f"Processing {len(voxel_list)} voxels")
 
-    # Method 2: Using multiprocessing Pool
-    #from multiprocessing import Pool
-    #with Pool(processes=args.num_jobs) as pool:
-        #results = pool.starmap(process_voxel, [(voxel, database_train.get_voxel_values(voxel), args.alpha) for voxel in voxel_list])
+    # Configure parallel processing
+    n_jobs = args.num_jobs if args.num_jobs > 0 else os.cpu_count()
+    backend = 'loky'  # Use loky backend which is more robust
 
-    from joblib import Parallel, delayed
-
-    results = Parallel(n_jobs=args.num_jobs)(
-        delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), args.alpha) 
-        for voxel in voxel_list
-    )
+    try:
+        results = Parallel(n_jobs=n_jobs, backend=backend, verbose=1)(
+            delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), args.alpha) 
+            for voxel in voxel_list
+        )
+    except Exception as e:
+        print(f"Error in parallel processing: {str(e)}")
+        print("Falling back to sequential processing...")
+        # Fallback to sequential processing
+        results = []
+        for voxel in voxel_list:
+            try:
+                result = process_voxel(voxel, database_train.get_voxel_values(voxel), args.alpha)
+                results.append(result)
+            except Exception as e:
+                print(f"Error processing voxel {voxel}: {str(e)}")
+                continue
 
     # Store correlations and update the fMRI-sized arrays
     correlations = []  # List to store mean correlation values
