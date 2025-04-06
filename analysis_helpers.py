@@ -37,7 +37,6 @@ def load_dataset(args, paths, participant_list):
     dataset_args = {
         "data_path": paths["data_path"],
         "fmri_data_path": paths["fmri_data_path"],
-        "img_size": tuple(args.img_size),
         "embeddings_text_path": paths["embeddings_text_path"],
         "embeddings_audio_path": paths["embeddings_audio_path"],
         "use_base_features": args.use_base_features,

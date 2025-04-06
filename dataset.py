@@ -23,12 +23,11 @@ from sklearn.preprocessing import StandardScaler
 import umap
 
 class BaseDataset(Dataset):
-    def __init__(self, participant_list, data_path, fmri_data_path, img_size=(75, 92, 77), 
+    def __init__(self, participant_list, data_path, fmri_data_path, 
                  pca_threshold=0.50, umap_n_neighbors=15, umap_min_dist=0.1, umap_n_components_text=5, umap_n_components_audio = 18, **kwargs):
         super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path
-        self.img_size = img_size
         self.participant_list = participant_list
         self.pca_threshold = pca_threshold
         self.umap_n_neighbors = umap_n_neighbors  # UMAP parameter: local vs global structure
@@ -46,40 +45,6 @@ class BaseDataset(Dataset):
         for name, value in kwargs.items():
             setattr(self, name, value)
         self.kwargs = kwargs
-
-    def pad_to_max(self, img):
-        """Pads an image to the maximum desired size."""
-        y = img
-        y_x, y_y, y_z = y.shape[0], y.shape[1], y.shape[2]
-
-        # Calculate padding for each dimension
-        x_back, x_for = processing_helpers.pad_back_forward(y_x, self.img_size[0])
-        y_back, y_for = processing_helpers.pad_back_forward(y_y, self.img_size[1])
-        z_back, z_for = processing_helpers.pad_back_forward(y_z, self.img_size[2])
-
-        # Get background value (first voxel in flattened array)
-        #background_value = y.flat[0]
-
-        # Apply padding using NumPy's pad
-        padding = [
-            (x_back, x_for),  # Padding for X dimension
-            (y_back, y_for),  # Padding for Y dimension
-            (z_back, z_for)   # Padding for Z dimension
-        ]
-
-        y = np.pad(y, padding, mode='constant', constant_values=0)
-        return y
-
-    def load_and_pad(self, image_path):
-        print(f"Loading image from: {image_path}")  # Debugging: print the image path
-        if not os.path.exists(image_path):
-            print(f"File does not exist: {image_path}")  # Debugging: check if file exists
-            return None, None
-        img = nib.load(image_path).get_fdata(dtype=np.float64)
-        mask = (img != 0).astype(np.uint8)  # 1 for real data, 0 for background
-        img_padded = self.pad_to_max(img)
-        mask_padded = self.pad_to_max(mask)
-        return img_padded, mask_padded
     
     def create_base_data(self):
         """Sets up the data by loading and processing fMRI data."""
@@ -107,9 +72,7 @@ class BaseDataset(Dataset):
                     parts = row["Condition_name"].split("_")
                     context_cond = parts[0]
                     statement_cond = parts[1]                    
-                    img_pad, mask_pad = self.load_and_pad(fmri_path)
-                    if img_pad is None or mask_pad is None:
-                        continue  # Skip if the image or mask could not be loaded
+                    img = nib.load(fmri_path).get_fdata(dtype=np.float64)
                
                     # Append the processed data
                     base_data.append({
@@ -118,8 +81,7 @@ class BaseDataset(Dataset):
                         "context": context,
                         "statement": statement,
                         "situation": situation,
-                        "fmri_data": img_pad,
-                        "fmri_mask": mask_pad,
+                        "fmri_data": img,
                         "context_condition": context_cond,
                         "statement_condition": statement_cond,
                         "evaluation": evaluation,
@@ -248,44 +210,13 @@ class BaseDataset(Dataset):
 
     def get_voxel_values(self, voxel):
         voxel_values = []
-        mask_values = []
         for item in self.base_data:
             voxel_values.append(item["fmri_data"][voxel])
-            mask_values.append(item["fmri_mask"][voxel])  # Extract mask value for the voxel
         self.data["fmri_value"] = voxel_values
-        self.data["fmri_mask"] = mask_values  # Add mask to the dataframe
         return self.data
-
-    def get_max_image_size(self):
-        """Determines the maximum size for x, y, and z dimensions across all images."""
-        max_x, max_y, max_z = 0, 0, 0
-        
-        for participant in self.participant_list:
-            participant_data_path = os.path.join(self.data_path, participant)
-            dfs = processing_helpers.load_dataframe(participant_data_path)
-    
-            for df in dfs.values():
-                df = df.rename(columns=lambda x: x.strip())
-                for index, row in df.iterrows():
-                    task = row["task"]
-                    statement = row["Statement"]
-                    fmri_file = f"{participant}_{task}_{index}_{statement[:-4]}.nii.gz"
-                    fmri_path = os.path.join(self.fmri_data_path, participant, fmri_file)
-                    
-                    if os.path.exists(fmri_path):  # Ensure the file exists before loading
-                        img = nib.load(fmri_path).get_fdata()
-                        x, y, z = img.shape
-                        
-                        # Update max dimensions
-                        max_x = max(max_x, x)
-                        max_y = max(max_y, y)
-                        max_z = max(max_z, z)
-    
-        return max_x, max_y, max_z       
-            
     
     def __getitem__(self, index):
-        return self.data[index]
+        return self.base_data[index]
 
     def __len__(self):
         return len(self.data)

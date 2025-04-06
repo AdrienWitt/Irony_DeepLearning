@@ -12,7 +12,7 @@ from pydub import AudioSegment
 # Define paths
 folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
-files_type = ['wrMF']
+files_type = ['swrMF']
 output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted'
    
 # fMRI parameters
@@ -44,13 +44,13 @@ def load_dataframe(participant_path):
 
 def crop_skull_background(fmri):
     mask = compute_epi_mask(fmri)
+    print(mask.shape)
     masked_list = []
     for img in iter_img(fmri):
         masked = math_img('img*mask', img=img, mask=mask)
         masked_list.append(masked)
     masked_concat = concat_imgs(masked_list)
-    cropped_img = crop_img(masked_concat)
-    return cropped_img
+    return masked_concat
 
 def mean_z_norm(fmri):
     global_mean = fmri.mean()
@@ -59,15 +59,6 @@ def mean_z_norm(fmri):
     print(f"Std: {global_std}")
     fmri_temp = (fmri - global_mean) / global_std
     return fmri_temp
-
-def audiofile_merger(context, statement, jitter):
-    context_path = os.path.join(folder_audio, context)
-    statement_path = os.path.join(folder_audio, statement)
-    context_audio = AudioSegment.from_file(context_path)
-    statement_audio = AudioSegment.from_file(statement_path)
-    jitter_audio = AudioSegment.silent(duration=jitter * 1000)
-    merged_audio = context_audio + jitter_audio + statement_audio
-    return merged_audio
 
 # Main processing loop
 for file_type in files_type:

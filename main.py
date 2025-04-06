@@ -11,14 +11,13 @@ import analysis_helpers
 
 # os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 # args = argparse.Namespace(
-#     img_size=[75, 92, 77],
 #     use_audio = True,
 #     use_text = True,
 #     use_base_features=True,
 #     use_context = False,
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
-# voxel = (62, 83, 58)
+# voxel = (0, 0, 0)
 
 # df_train = database_train.get_voxel_values(voxel)
 
@@ -60,15 +59,14 @@ def voxel_analysis(voxel, df_train, alpha):
     """Train Ridge regression and compute correlation for a given voxel using 5-fold CV."""
     random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
             # Extract features, target, and mask
-    X = df_train.drop(columns=["fmri_value", "fmri_mask"]).values
+    X = df_train.drop(columns=["fmri_value"]).values
     y = df_train["fmri_value"].values
-    mask = df_train["fmri_mask"].values
         
-    # Filter data based on mask BEFORE cross-validation
-    X_filtered = X[mask == 1]
-    y_filtered = y[mask == 1]
+    valid_idx = y != 0 ## exclude background values
+    X_filtered = X[valid_idx]
+    y_filtered = y[valid_idx]
 
-    print("X_filtered : ", len(X_filtered))
+    print("X_filtered length: ", len(X_filtered))
     
     # Check if there's any valid data after filtering
     if len(X_filtered) == 0:
@@ -117,7 +115,6 @@ def main():
     args = parse_arguments()
 
     print(f"Running with settings:\n"
-          f"- Image size: {args.img_size}\n"
           f"- Use base features: {args.use_base_features}\n"
           f"- Use text: {args.use_text}\n"
           f"- Use audio: {args.use_audio}\n"
@@ -130,15 +127,17 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = os.listdir(paths["data_path"])[30:50]
+    # participant_list = os.listdir(paths["data_path"])[30:50]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
+    
     # Generate voxel list dynamically
-    voxel_list = list(np.ndindex(tuple(args.img_size)))
-    #voxel_list = voxel_list[400:600]
+    img_size = (79, 95, 79)
+    voxel_list = list(np.ndindex(img_size))
+    # voxel_list = voxel_list[40000:50000]
 
     # Initialize correlation maps (one for mean and one for individual folds)
-    correlation_map_mean = np.zeros(tuple(args.img_size))
-    correlation_map_folds = np.zeros(tuple(args.img_size) + (5,))  # Shape: (75, 92, 77, 5)
+    correlation_map_mean = np.zeros((img_size))
+    correlation_map_folds = np.zeros((img_size) + (5,))
 
     print(f"Processing {len(voxel_list)} voxels")
 
