@@ -53,11 +53,24 @@ def crop_skull_background(fmri):
     return masked_concat
 
 def mean_z_norm(fmri):
-    global_mean = fmri.mean()
-    print(f"Mean: {global_mean}")
-    global_std = fmri.std()
-    print(f"Std: {global_std}")
-    fmri_temp = (fmri - global_mean) / global_std
+    # Create a mask of the non-background voxels (values ≠ 0)
+    nonzero_mask = fmri != 0  
+    nonzero_voxels = fmri[nonzero_mask]  # Extract only nonzero values
+
+    if len(nonzero_voxels) == 0:  # Safety check
+        print("Warning: No nonzero voxels found!")
+        return fmri  # Return unmodified data
+
+    global_mean = np.mean(nonzero_voxels)
+    global_std = np.std(nonzero_voxels)
+
+    print(f"Mean (excluding background): {global_mean}")
+    print(f"Std (excluding background): {global_std}")
+
+    # Create an array of zeros (to preserve background values)
+    fmri_temp = np.zeros_like(fmri)  
+    fmri_temp[nonzero_mask] = (fmri[nonzero_mask] - global_mean) / global_std  # Normalize only nonzero voxels
+
     return fmri_temp
 
 # Main processing loop

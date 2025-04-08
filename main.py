@@ -14,12 +14,11 @@ import analysis_helpers
 #     use_audio = True,
 #     use_text = True,
 #     use_base_features=True,
-#     use_context = False,
+#     use_text_combined = False,
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
-# voxel = (0, 0, 0)
+# voxel = (15, 32, 36)
 
-# df_train = database_train.get_voxel_values(voxel)
 
 # Set a reliable temporary directory for joblib
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
@@ -37,8 +36,8 @@ def parse_arguments():
                                 help="Include text in dataset (default: False).")
     dataset_group.add_argument("--use_audio", action="store_true", 
                                 help="Include audio in dataset (default: False).")
-    dataset_group.add_argument("--use_context", action="store_true", 
-                                help="Include context in dataset (default: False).")
+    dataset_group.add_argument("--use_text_combined", action="store_true", 
+                                help="Include text_combined in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
                                 help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
     dataset_group.add_argument("--use_umap", action="store_true",
@@ -118,7 +117,7 @@ def main():
           f"- Use base features: {args.use_base_features}\n"
           f"- Use text: {args.use_text}\n"
           f"- Use audio: {args.use_audio}\n"
-          f"- Use context: {args.use_context}\n"
+          f"- Use text_combined: {args.use_text_combined}\n"
           f"- Use PCA: {args.use_pca}\n"
           f"- Use UMAP: {args.use_umap}\n"
           f"- PCA threshold: {args.pca_threshold}\n"
@@ -183,8 +182,8 @@ def main():
         features_used.append("text")
     if args.use_audio:
         features_used.append("audio")
-    if args.use_context:
-        features_used.append("context")
+    if args.use_text_combined:
+        features_used.append("text_combined")
     if args.use_base_features:
         features_used.append("base")
     

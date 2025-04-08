@@ -42,7 +42,7 @@ def load_dataset(args, paths, participant_list):
         "use_base_features": args.use_base_features,
         "use_text": args.use_text,
         "use_audio": args.use_audio,
-        "use_context": args.use_context,
+        "use_text_combined": args.use_text_combined,
         "pca_threshold": args.pca_threshold,
         "use_pca" : args.use_pca,
         "use_umap" : args.use_umap
