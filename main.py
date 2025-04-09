@@ -9,13 +9,13 @@ from joblib import Parallel, delayed
 import dataset  
 import analysis_helpers
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-args = argparse.Namespace(
-    use_audio = False,
-    use_text = True,
-    use_base_features=True,
-    use_text_weighted = False,
-    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
+# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+# args = argparse.Namespace(
+#     use_audio = False,
+#     use_text = True,
+#     use_base_features=True,
+#     use_text_weighted = False,
+#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 # voxel = (15, 32, 36)
 
