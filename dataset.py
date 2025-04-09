@@ -115,7 +115,7 @@ class BaseDataset(Dataset):
         final_data = []
         embeddings_text_list = []
         embeddings_audio_list = []
-        embeddings_combined_list = []
+        embeddings_weighted_list = []
         
         for item in self.base_data:
             fmri_value = None
@@ -144,8 +144,8 @@ class BaseDataset(Dataset):
             embeddings_audio = np.load(os.path.join(self.embeddings_audio_path, f"{item['statement'].replace('.wav', '_layers5-6.npy')}"))
             embeddings_audio_list.append(embeddings_audio)
             
-            embeddings_text_combined = np.load(os.path.join(self.embeddings_text_path, "text_combined", f"{context}_{item['situation']}_{semantic}_{item['situation']}_weighted.npy"))
-            embeddings_combined_list.append(embeddings_text_combined)
+            embeddings_text_weighted = np.load(os.path.join(self.embeddings_text_path, "text_weighted", f"{context}_{item['situation']}_{semantic}_{item['situation']}_weighted.npy"))
+            embeddings_weighted_list.append(embeddings_text_weighted)
 
         if self.use_base_features:
             df = pd.DataFrame(final_data)
@@ -191,16 +191,16 @@ class BaseDataset(Dataset):
                 df = pd.concat([df, df_scaled], axis=1)
 
         # Process context embeddings
-        if self.use_text_combined:
-            embeddings_df = pd.DataFrame(np.vstack(embeddings_combined_list))
-            embeddings_df.columns = [f"emb_combined_{i}" for i in range(embeddings_df.shape[1])]
+        if self.use_text_weighted:
+            embeddings_df = pd.DataFrame(np.vstack(embeddings_weighted_list))
+            embeddings_df.columns = [f"emb_weighted_{i}" for i in range(embeddings_df.shape[1])]
             
             if self.use_umap:
-                df_umap_combined = self.apply_umap(embeddings_df, prefix="umap_context")
-                df = pd.concat([df, df_umap_combined], axis=1)
+                df_umap_weighted = self.apply_umap(embeddings_df, prefix="umap_context")
+                df = pd.concat([df, df_umap_weighted], axis=1)
             elif self.use_pca:
-                df_pca_combined = self.apply_pca(embeddings_df, prefix="pc_combined")
-                df = pd.concat([df, df_pca_combined], axis=1)
+                df_pca_weighted = self.apply_pca(embeddings_df, prefix="pc_weighted")
+                df = pd.concat([df, df_pca_weighted], axis=1)
             else:
                 # Scale raw embeddings if no dimensionality reduction
                 embeddings_scaled = self.scaler.fit_transform(embeddings_df)

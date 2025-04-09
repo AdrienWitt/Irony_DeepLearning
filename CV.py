@@ -32,8 +32,8 @@ def parse_arguments():
                              help="Include text in dataset (default: False).")
     dataset_group.add_argument("--use_audio", action="store_true", 
                              help="Include audio in dataset (default: False).")
-    dataset_group.add_argument("--use_text_combined", action="store_true", 
-                             help="Include text_combined in dataset (default: False).")
+    dataset_group.add_argument("--use_text_weighted", action="store_true", 
+                             help="Include text_weighted in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true",
                              help="Use PCA for embeddings (default: False)")
     dataset_group.add_argument("--use_umap", action="store_true",
@@ -80,7 +80,7 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
 
     
     # Identify embedding columns
-    text_cols = [col for col in df_train.columns if col.startswith(('emb_combined_', 'pc_combined_'))]
+    text_cols = [col for col in df_train.columns if col.startswith(('emb_weighted_', 'pc_weighted_'))]
     audio_cols = [col for col in df_train.columns if col.startswith(('emb_audio_', 'pc_audio_'))]
     embedding_cols = text_cols + audio_cols    
     
@@ -259,7 +259,7 @@ def main():
     print(f"- Use base features: {args.use_base_features}")
     print(f"- Use text: {args.use_text}")
     print(f"- Use audio: {args.use_audio}")
-    print(f"- Use text_combined: {args.use_text_combined}")
+    print(f"- Use text_weighted: {args.use_text_weighted}")
     print(f"- Use PCA: {args.use_pca}")
     print(f"- Number of parallel jobs: {args.num_jobs}")
     

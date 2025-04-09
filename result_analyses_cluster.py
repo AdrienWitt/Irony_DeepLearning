@@ -22,6 +22,7 @@ r_text_audio = np.load("results/correlation_map_mean_text_audio_base.npy")
 data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"  # Replace with the path to your brain data
 ##compute average affine
 all_affines = []
+all_headers = []
 for subject in os.listdir(data_folder):
     subject_path = os.path.join(data_folder, subject)
     for file in os.listdir(subject_path):  # Fixed variable name 'files' to 'file'
@@ -29,8 +30,11 @@ for subject in os.listdir(data_folder):
             file_path = os.path.join(subject_path, file)  # Fixed os.path.join syntax
             nifti_img = nib.load(file_path)
             all_affines.append(nifti_img.affine)
+            all_headers.append(nifti_img.header)
 
 affine = np.array(np.mean(all_affines, axis=0))
+# header = np.array(np.mean(all_headers, axis=0))
+
 
 # Smooth the correlation maps
 r_audio_nifti = nib.Nifti1Image(r_audio, affine)
@@ -77,7 +81,7 @@ cluster_threshold = 0.05
 initial_mask_3d = (p_values.reshape(X, Y, Z) < cluster_threshold) & positive_mask
 
 # Step 8: Identify clusters in observed data
-labeled_array, num_clusters = label(initial_mask_3d)
+labeled_array, num_clusters = label(initial_mask_3d, structure=np.ones((3, 3, 3)))
 observed_cluster_sizes = np.bincount(labeled_array.ravel())[1:]  # Skip background (0)
 
 # Step 9: Compute cluster sizes in permutations
@@ -98,21 +102,29 @@ clustered_mask_3d = np.isin(labeled_array, significant_clusters)
 significance_map_3d = np.zeros_like(delta_r_obs_3d)
 significance_map_3d[clustered_mask_3d] = delta_r_obs_3d[clustered_mask_3d]
 
-
 # Create and save NIfTI
+significance_nifti = nib.Nifti1Image(significance_map_3d, affine, all_headers[1])
+nib.save(significance_nifti, 'results/significant_improvements_cluster_corrected.nii')
+
+
+# Create NIfTI with affine (from your averaging or MNI152)
 significance_nifti = nib.Nifti1Image(significance_map_3d, affine)
 nib.save(significance_nifti, 'results/significant_improvements_cluster_corrected.nii')
 
-# Visualize
+# Plot only significant delta correlations
 min_delta = np.min(significance_map_3d[significance_map_3d > 0]) if np.any(significance_map_3d > 0) else 0
-plotting.plot_glass_brain(
+plotting.plot_stat_map(
     significance_nifti,
-    threshold=min_delta,
-    title='Significant Clusters (Text+Audio > Max(Text, Audio))\nCluster-corrected p < 0.05',
+    bg_img=load_mni152_template(resolution=3),  # Overlay on MNI152
+    threshold=min_delta,  # Show only significant values
+    title='Significant Delta R² (Text+Audio > Max(Text, Audio))\nCluster-corrected p < 0.05',
     colorbar=True,
-    cmap='RdBu_r'
+    cmap='RdBu_r',  # Red-blue map for positive deltas
+    vmax=np.max(significance_map_3d) * 1.1,  # Adjust color scale
+    display_mode='ortho',  # Show x, y, z slices
+    cut_coords=(0, 0, 0)  # Center on brain origin
 )
-plt.savefig('results/significant_improvements_glass_brain_cluster.png', dpi=300)
+plt.savefig('results/significant_delta_r_stat_map.png', dpi=300)
 plt.close()
 
 # Print summary

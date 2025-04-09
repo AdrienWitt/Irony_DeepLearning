@@ -9,13 +9,13 @@ from joblib import Parallel, delayed
 import dataset  
 import analysis_helpers
 
-# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-# args = argparse.Namespace(
-#     use_audio = True,
-#     use_text = True,
-#     use_base_features=True,
-#     use_text_combined = False,
-#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
+os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+args = argparse.Namespace(
+    use_audio = False,
+    use_text = True,
+    use_base_features=True,
+    use_text_weighted = False,
+    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 # voxel = (15, 32, 36)
 
@@ -36,8 +36,8 @@ def parse_arguments():
                                 help="Include text in dataset (default: False).")
     dataset_group.add_argument("--use_audio", action="store_true", 
                                 help="Include audio in dataset (default: False).")
-    dataset_group.add_argument("--use_text_combined", action="store_true", 
-                                help="Include text_combined in dataset (default: False).")
+    dataset_group.add_argument("--use_text_weighted", action="store_true", 
+                                help="Include text_weighted in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
                                 help="Use PCA for embeddings with the a certain amount of explained variance directly in the dataset method (default: False).")
     dataset_group.add_argument("--use_umap", action="store_true",
@@ -108,6 +108,16 @@ def voxel_analysis(voxel, df_train, alpha):
 def process_voxel(voxel, df_train, alpha):
     return voxel_analysis(voxel, df_train, alpha)
 
+def adjust_alpha(database_train, args):
+    df = database_train.data.drop(columns=["fmri_value"])
+    if args.use_audio and args.use_text_weighted:
+        alpha = args.alpha
+    else: 
+        alpha = args.alpha * df.shape[1] / 79 ## 79 is the total number of features with PCA 0.50 threshold for text and audio
+        print(f"- Use correced alpha: {alpha}")
+    return alpha
+    
+
 def main():
     start_time = time.time()  # Start timing
 
@@ -117,7 +127,7 @@ def main():
           f"- Use base features: {args.use_base_features}\n"
           f"- Use text: {args.use_text}\n"
           f"- Use audio: {args.use_audio}\n"
-          f"- Use text_combined: {args.use_text_combined}\n"
+          f"- Use text_weighted: {args.use_text_weighted}\n"
           f"- Use PCA: {args.use_pca}\n"
           f"- Use UMAP: {args.use_umap}\n"
           f"- PCA threshold: {args.pca_threshold}\n"
@@ -126,8 +136,10 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    # participant_list = os.listdir(paths["data_path"])[30:50]
+    # participant_list = os.listdir(paths["data_path"])[0:1]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
+    
+    alpha = adjust_alpha(database_train, args, paths)
     
     # Generate voxel list dynamically
     img_size = (79, 95, 79)
@@ -146,7 +158,7 @@ def main():
 
     try:
         results = Parallel(n_jobs=n_jobs, backend=backend, verbose=1)(
-            delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), args.alpha) 
+            delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), alpha) 
             for voxel in voxel_list
         )
     except Exception as e:
@@ -182,8 +194,8 @@ def main():
         features_used.append("text")
     if args.use_audio:
         features_used.append("audio")
-    if args.use_text_combined:
-        features_used.append("text_combined")
+    if args.use_text_weighted:
+        features_used.append("text_weighted")
     if args.use_base_features:
         features_used.append("base")
     
