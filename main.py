@@ -12,13 +12,13 @@ import analysis_helpers
 # os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 # args = argparse.Namespace(
 #     use_audio = False,
-#     use_text = True,
+#     use_text = False,
 #     use_base_features=True,
 #     use_text_weighted = False,
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
-# voxel = (15, 32, 36)
 
+# df_train = database_train.get_voxel_values(((50, 50, 50)))
 
 # Set a reliable temporary directory for joblib
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
@@ -28,8 +28,6 @@ def parse_arguments():
 
     # **Dataset-related arguments**
     dataset_group = parser.add_argument_group("Dataset Arguments")
-    dataset_group.add_argument("--img_size", type=int, nargs=3, default=[75, 92, 77],
-                                help="Size of fMRI images as three integers (default: 75 92 77).")
     dataset_group.add_argument("--use_base_features", action="store_true", 
                                 help="Include base features in dataset (default: False).")
     dataset_group.add_argument("--use_text", action="store_true", 
@@ -136,10 +134,10 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    # participant_list = os.listdir(paths["data_path"])[0:1]
+    participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
-    alpha = adjust_alpha(database_train, args, paths)
+    alpha = adjust_alpha(database_train, args)
     
     # Generate voxel list dynamically
     img_size = (79, 95, 79)

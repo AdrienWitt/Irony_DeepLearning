@@ -33,7 +33,7 @@ for subject in os.listdir(data_folder):
             all_headers.append(nifti_img.header)
 
 affine = np.array(np.mean(all_affines, axis=0))
-# header = np.array(np.mean(all_headers, axis=0))
+header = all_headers[333]
 
 
 # Smooth the correlation maps
