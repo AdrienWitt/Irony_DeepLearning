@@ -134,7 +134,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    participant_list = os.listdir(paths["data_path"])[0:10]
+    #participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
