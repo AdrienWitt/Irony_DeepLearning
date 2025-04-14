@@ -9,16 +9,16 @@ from joblib import Parallel, delayed
 import dataset  
 import analysis_helpers
 
-# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-# args = argparse.Namespace(
-#     use_audio = False,
-#     use_text = False,
-#     use_base_features=True,
-#     use_text_weighted = False,
-#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
+os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+args = argparse.Namespace(
+    use_audio = True,
+    use_text = False,
+    use_base_features=True,
+    use_text_weighted = True,
+    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 
-# df_train = database_train.get_voxel_values(((50, 50, 50)))
+df_train = database_train.get_voxel_values(((50, 50, 50)))
 
 # Set a reliable temporary directory for joblib
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
@@ -111,7 +111,7 @@ def adjust_alpha(database_train, args):
     if args.use_audio and args.use_text_weighted:
         alpha = args.alpha
     else: 
-        alpha = args.alpha * df.shape[1] / 79 ## 79 is the total number of features with PCA 0.50 threshold for text and audio
+        alpha = args.alpha * df.shape[1] / 84 ## 79 is the total number of features with PCA 0.50 threshold for text and audio
         print(f"- Use correced alpha: {alpha}")
     return alpha
     
@@ -134,7 +134,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = os.listdir(paths["data_path"])[0:10]
+    # participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
@@ -203,10 +203,10 @@ def main():
     # Save correlation maps
     result_file_mean = os.path.join(
         paths["results_path"],
-        f"correlation_map_mean_{feature_str}.npy")
+        f"correlation_map_mean_{feature_str}_all_tasks.npy")
     result_file_folds = os.path.join(
         paths["results_path"],
-        f"correlation_map_folds_{feature_str}.npy")
+        f"correlation_map_folds_{feature_str}_all_tasks.npy")
     
     np.save(result_file_mean, correlation_map_mean)
     np.save(result_file_folds, correlation_map_folds)

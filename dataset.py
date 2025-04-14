@@ -34,7 +34,8 @@ class BaseDataset(Dataset):
         self.umap_min_dist = umap_min_dist  # UMAP parameter: minimum distance in low-dim space
         self.umap_n_components_text = umap_n_components_text  # UMAP parameter: output dimensions
         self.umap_n_components_audio = umap_n_components_audio  # UMAP parameter: output dimensions
-
+        
+        self.included_tasks = ["sarcasm", "irony", "prosody", "semantic", "tom"]
         self.scaler = StandardScaler()
         self.register_args(**kwargs)
         self.base_data = self.create_base_data()
@@ -57,7 +58,7 @@ class BaseDataset(Dataset):
                 df = df.rename(columns=lambda x: x.strip())
                 for index, row in df.iterrows():
                     task = row["task"]
-                    if task not in ["irony", "sarcasm"]:
+                    if task not in self.included_tasks:
                         continue
                     context = row["Context"]
                     statement = row["Statement"]

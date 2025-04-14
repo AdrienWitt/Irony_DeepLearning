@@ -1,56 +1,76 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import percentileofscore
-from statsmodels.stats.multitest import multipletests
-import os
 import nibabel as nib
-from nilearn import plotting, datasets
-import pandas as pd
-from nilearn.image import smooth_img
+from nilearn import plotting, datasets, image
+from statsmodels.stats.multitest import fdrcorrection
 
+# Load MNI template and brain mask
+mni_template = datasets.load_mni152_template(resolution=2)
+affine = mni_template.affine
+brain_mask_nifti = datasets.load_mni152_brain_mask(resolution=2)
+brain_mask = brain_mask_nifti.get_fdata().astype(bool)
 
-# Load correlation maps (Shape: X × Y × Z, already mean across folds)
-r_audio = np.load("results/correlation_map_mean_audio_base.npy")  # Shape (X, Y, Z)
-r_text = np.load("results/correlation_map_mean_text_base.npy")    # Shape (X, Y, Z)
-r_text_audio = np.load("results/correlation_map_mean_text_audio_base.npy")  # Shape (X, Y, Z)
+# Load correlation maps
+r_audio = np.load("results/correlation_map_mean_audio_base.npy")
+r_text = np.load("results/correlation_map_mean_text_weighted_base.npy")
+r_text_audio = np.load("results/correlation_map_mean_audio_text_weighted_base.npy")
 
-data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"  # Replace with the path to your brain data
+# Check shapes
+print("Correlation map shape:", r_audio.shape)
+print("MNI template shape:", mni_template.shape)
+shapes_match = r_audio.shape == mni_template.shape
 
-all_affines = []
-for subject in os.listdir(data_folder):
-    subject_path = os.path.join(data_folder, subject)
-    for file in os.listdir(subject_path):  # Fixed variable name 'files' to 'file'
-        if file.endswith('.nii') or file.endswith('.nii.gz'):  # Check for NIfTI files
-            file_path = os.path.join(subject_path, file)  # Fixed os.path.join syntax
-            nifti_img = nib.load(file_path)
-            all_affines.append(nifti_img.affine)
+# Create NIfTI images
+r_audio_nifti = nib.Nifti1Image(r_audio, affine)
+r_text_nifti = nib.Nifti1Image(r_text, affine)
+r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
 
-affine = np.array(np.mean(all_affines, axis=0))
-# Proceed with your analysis (Step 2 onward)
-delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
+# Resample only if needed
+if not shapes_match:
+    print("Resampling to MNI 2 mm space...")
+    r_audio_nifti = image.resample_img(r_audio_nifti, target_affine=affine, target_shape=mni_template.shape)
+    r_text_nifti = image.resample_img(r_text_nifti, target_affine=affine, target_shape=mni_template.shape)
+    r_text_audio_nifti = image.resample_img(r_text_audio_nifti, target_affine=affine, target_shape=mni_template.shape)
+    r_audio = r_audio_nifti.get_fdata()
+    r_text = r_text_nifti.get_fdata()
+    r_text_audio = r_text_audio_nifti.get_fdata()
+else:
+    print("Skipping resampling: shapes match.")
+
+# Smooth and apply brain mask
+fwhm = 6.0
+r_audio = image.smooth_img(r_audio_nifti, fwhm=fwhm).get_fdata() * brain_mask
+r_text = image.smooth_img(r_text_nifti, fwhm=fwhm).get_fdata() * brain_mask
+r_text_audio = image.smooth_img(r_text_audio_nifti, fwhm=fwhm).get_fdata() * brain_mask
+
+# Check zeros within brain
+print(f"Zero voxels in r_audio (within brain): {np.sum(r_audio[brain_mask] == 0) / np.sum(brain_mask):.2%}")
+print(f"Zero voxels in r_text (within brain): {np.sum(r_text[brain_mask] == 0) / np.sum(brain_mask):.2%}")
+print(f"Zero voxels in r_text_audio (within brain): {np.sum(r_text_audio[brain_mask] == 0) / np.sum(brain_mask):.2%}")
 
 # Step 1: Get the original shape
-X, Y, Z = r_audio.shape  # Brain volume dimensions (no folds)
+X, Y, Z = r_audio.shape
 
-# Step 2: Compute observed improvement per voxel in 3D
-delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)  # Shape (X, Y, Z)
+# Step 2: Compute observed improvement
+delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
 
-# Step 3: Filter for positive delta_r before flattening
-positive_mask = delta_r_obs_3d > 0  # Boolean mask for positive improvements
-delta_r_positive_3d = delta_r_obs_3d * positive_mask  # Keep only positive values
+# Step 3: Filter for positive delta_r
+positive_mask = delta_r_obs_3d > 0
+delta_r_positive_3d = delta_r_obs_3d * positive_mask
 
-# Step 4: Flatten spatial dimensions
-V = X * Y * Z  # Total number of voxels
-r_audio_flat = r_audio.reshape(V)
-r_text_flat = r_text.reshape(V)
-r_text_audio_flat = r_text_audio.reshape(V)
-delta_r_obs_flat = delta_r_obs_3d.reshape(V)
-positive_mask_flat = positive_mask.reshape(V)
+# Step 4: Flatten only brain voxels
+brain_mask_flat = brain_mask.ravel()
+valid_voxels = brain_mask_flat
+V = np.sum(valid_voxels)  # Number of brain voxels
+r_audio_flat = r_audio.reshape(-1)[valid_voxels]
+r_text_flat = r_text.reshape(-1)[valid_voxels]
+r_text_audio_flat = r_text_audio.reshape(-1)[valid_voxels]
+delta_r_obs_flat = delta_r_obs_3d.reshape(-1)[valid_voxels]
+positive_mask_flat = positive_mask.reshape(-1)[valid_voxels]
 
 # Step 5: Permutation test
-num_permutations = 1000
+num_permutations = 5000
 delta_r_perm = np.zeros((V, num_permutations))
-
 for i in range(num_permutations):
     permuted_indices = np.random.permutation(V)
     r_audio_perm = r_audio_flat[permuted_indices]
@@ -58,51 +78,54 @@ for i in range(num_permutations):
     r_text_audio_perm = r_text_audio_flat[permuted_indices]
     delta_r_perm[:, i] = r_text_audio_perm - np.maximum(r_audio_perm, r_text_perm)
 
-# Step 6: Compute p-values for all voxels
-p_values = np.mean(delta_r_perm >= delta_r_obs_flat[:, np.newaxis], axis=1)  # Shape (V,)
+# Step 6: Compute p-values for each voxel
+p_values_flat = np.zeros(V)
+for v in range(V):
+    if delta_r_obs_flat[v] > 0:  # Only compute for positive delta_r
+        p_values_flat[v] = np.mean(delta_r_perm[v, :] >= delta_r_obs_flat[v])
+    else:
+        p_values_flat[v] = 1.0  # Non-positive delta_r gets p=1
 
-# Step 7: Adjust p-values for ALL comparisons using FDR (Benjamini-Hochberg)
-reject, p_values_adjusted, _, _ = multipletests(p_values, alpha=0.05, method='fdr_bh')
+# Step 7: Apply FDR correction
+rejected, p_values_fdr = fdrcorrection(p_values_flat, alpha=0.05, method='indep')
 
-# Step 8: Find significant voxels (adjusted p < 0.05) among positive delta_r
-significant_mask_flat = (p_values_adjusted < 0.05) & positive_mask_flat
-
-# Check the difference between original and adjusted p-values
-print("Original p-values (first 10 voxels):")
-print(p_values[:10])
-print("\nAdjusted p-values (first 10 voxels):")
-print(p_values_adjusted[:10])
-
-# Calculate summary statistics
-print(f"\nMean original p-value: {np.mean(p_values):.6f}")
-print(f"Mean adjusted p-value: {np.mean(p_values_adjusted):.6f}")
-
-# How many significant voxels before and after correction?
-sig_before = np.sum(p_values < 0.05)
-sig_after = np.sum(p_values_adjusted < 0.05)
-print(f"\nSignificant voxels before correction: {sig_before} ({sig_before/len(p_values)*100:.2f}%)")
-print(f"Significant voxels after correction: {sig_after} ({sig_after/len(p_values)*100:.2f}%)")
-
-# Reshape the significant mask back to 3D space
-significant_mask_3d = significant_mask_flat.reshape(X, Y, Z)
-# Create a significance map showing the delta_r values only where significant
+# Step 8: Create significance map (p < 0.05, FDR-corrected)
 significance_map_3d = np.zeros_like(delta_r_obs_3d)
-significance_map_3d[significant_mask_3d] = delta_r_obs_3d[significant_mask_3d]
+significant_voxels = np.zeros_like(brain_mask, dtype=bool)
+significant_voxels[brain_mask] = rejected  # Map rejected hypotheses back to brain voxels
+significant_voxels = significant_voxels & positive_mask  # Restrict to positive delta_r
+significance_map_3d[significant_voxels] = delta_r_obs_3d[significant_voxels]
 
-# Create a new NIfTI image with the significance map and template's affine
-significance_nifti = nib.Nifti1Image(significance_map_3d,affine)
+# Print summary
+if np.any(significant_voxels):
+    print(f"Number of significant voxels (FDR, p < 0.05): {np.sum(significant_voxels)}")
+else:
+    print("No significant voxels found (FDR, p < 0.05).")
 
-# Save the significance map as a NIfTI file
-nib.save(significance_nifti, 'results/significant_improvements_fdr_corrected.nii')
+# Create and save NIfTI
+significance_nifti = nib.Nifti1Image(significance_map_3d, affine)
+nib.save(significance_nifti, 'results/significant_improvements_fdr_corrected_masked.nii')
+
 
 # Plot using nilearn
 fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 plotting.plot_glass_brain(significance_nifti, threshold=0, 
-                         title='Significant improvement (text+audio > max(text,audio))\nFDR-corrected p < 0.05',
+                         title='Significant improvement (text+audio > max(text,audio))\nFWER-corrected p < 0.05',
                          colorbar=True, plot_abs=False,
                          display_mode='ortho', axes=ax)
-plt.tight_layout()
-plt.savefig('results/significant_improvements_glass_brain.png', dpi=300)
+
+# Plot results
+min_delta = np.min(significance_map_3d[significance_map_3d > 0]) if np.any(significance_map_3d > 0) else 0
+plotting.plot_stat_map(
+    significance_nifti,
+    bg_img=mni_template,
+    threshold=min_delta,
+    title='Significant Delta R² (Text+Audio > Max(Text, Audio))\nFDR-corrected p < 0.05',
+    colorbar=True,
+    cmap='RdBu_r',
+    vmax=np.max(significance_map_3d) * 1.1 if np.any(significance_map_3d > 0) else 1.0,
+    display_mode='ortho',
+    cut_coords=(0, 0, 0)
+)
+plt.savefig('results/significant_delta_r_stat_map_fdr_2mm.png', dpi=300)
 plt.close()
-
-

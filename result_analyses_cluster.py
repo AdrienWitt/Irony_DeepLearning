@@ -35,11 +35,10 @@ for subject in os.listdir(data_folder):
 affine = np.array(np.mean(all_affines, axis=0))
 header = all_headers[333]
 
-
 # Smooth the correlation maps
-r_audio_nifti = nib.Nifti1Image(r_audio, affine)
-r_text_nifti = nib.Nifti1Image(r_text, affine)
-r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
+r_audio_nifti = nib.Nifti1Image(r_audio, affine, header)
+r_text_nifti = nib.Nifti1Image(r_text, affine, header)
+r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine, header)
 fwhm = 6.0
 r_audio = image.smooth_img(r_audio_nifti, fwhm=fwhm).get_fdata()
 r_text = image.smooth_img(r_text_nifti, fwhm=fwhm).get_fdata()
@@ -64,7 +63,7 @@ delta_r_obs_flat = delta_r_obs_3d.reshape(V)
 positive_mask_flat = positive_mask.reshape(V)
 
 # Step 5: Permutation test
-num_permutations = 1000
+num_permutations = 5000
 delta_r_perm = np.zeros((V, num_permutations))
 for i in range(num_permutations):
     permuted_indices = np.random.permutation(V)
@@ -111,22 +110,9 @@ nib.save(significance_nifti, 'results/significant_improvements_cluster_corrected
 significance_nifti = nib.Nifti1Image(significance_map_3d, affine)
 nib.save(significance_nifti, 'results/significant_improvements_cluster_corrected.nii')
 
-# Plot only significant delta correlations
-min_delta = np.min(significance_map_3d[significance_map_3d > 0]) if np.any(significance_map_3d > 0) else 0
-plotting.plot_stat_map(
-    significance_nifti,
-    bg_img=load_mni152_template(resolution=3),  # Overlay on MNI152
-    threshold=min_delta,  # Show only significant values
-    title='Significant Delta R² (Text+Audio > Max(Text, Audio))\nCluster-corrected p < 0.05',
-    colorbar=True,
-    cmap='RdBu_r',  # Red-blue map for positive deltas
-    vmax=np.max(significance_map_3d) * 1.1,  # Adjust color scale
-    display_mode='ortho',  # Show x, y, z slices
-    cut_coords=(0, 0, 0)  # Center on brain origin
-)
-plt.savefig('results/significant_delta_r_stat_map.png', dpi=300)
-plt.close()
-
-# Print summary
-print(f"Number of significant clusters: {len(significant_clusters)}")
-print(f"Cluster p-values: {cluster_p_values}")
+# Plot using nilearn
+fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+plotting.plot_glass_brain(significance_nifti, threshold=0, 
+                         title='Significant improvement (text+audio > max(text,audio))\nFDR-corrected p < 0.05',
+                         colorbar=True, plot_abs=False,
+                         display_mode='ortho', axes=ax)
