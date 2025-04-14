@@ -1,17 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Mar 20 09:33:59 2025
-
-@author: adywi
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Dec  1 13:49:24 2024
-
-@author: adywi
-"""
-
 from torch.utils.data import Dataset
 import os
 import pandas as pd
