@@ -8,6 +8,8 @@ from scipy.stats import pearsonr
 from joblib import Parallel, delayed
 import dataset  
 import analysis_helpers
+from sklearn.metrics import r2_score
+
 
 # os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 # args = argparse.Namespace(
@@ -65,15 +67,16 @@ def voxel_analysis(voxel, df_train, alpha):
 
     print("X_filtered length: ", len(X_filtered))
     
-    # Check if there's any valid data after filtering
+    # Exclude background
     if len(X_filtered) == 0:
         print(f"No valid data for voxel {voxel} after filtering")
-        return voxel, [0] * 5, 0  # Return zeros for all folds and mean if no valid data
+        return voxel, [0] * 5, 0, [0] * 5, 0  # Return zeros for correlations and R^2
     
     # Perform 5-fold cross-validation on filtered data
     from sklearn.model_selection import KFold
     kf = KFold(n_splits=5, shuffle=True, random_state=random_seed)
     cv_scores = []
+    r2_scores = []
     
     for fold, (train_idx, val_idx) in enumerate(kf.split(X_filtered)):
         # Split filtered data
@@ -97,10 +100,14 @@ def voxel_analysis(voxel, df_train, alpha):
             print(f"Standard deviation is 0 in fold {fold} for voxel {voxel}")
         
         cv_scores.append(correlation)
+        
+        r2 = r2_score(y_val_fold, y_pred_fold)
+        r2_scores.append(r2)
     
     mean_correlation = np.mean(cv_scores)
-    print(f"{voxel} {mean_correlation}")
-    return voxel, cv_scores, mean_correlation
+    mean_r2 = np.mean(r2_scores)
+    print(f"{voxel} corr: {mean_correlation:.4f}, R^2: {mean_r2:.4f}")
+    return voxel, cv_scores, mean_correlation, r2_scores, mean_r2
 
 
 def process_voxel(voxel, df_train, alpha):
@@ -134,7 +141,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    # participant_list = os.listdir(paths["data_path"])[0:10]
+    participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
@@ -144,9 +151,12 @@ def main():
     voxel_list = list(np.ndindex(img_size))
     # voxel_list = voxel_list[40000:50000]
 
-    # Initialize correlation maps (one for mean and one for individual folds)
-    correlation_map_mean = np.zeros((img_size))
-    correlation_map_folds = np.zeros((img_size) + (5,))
+    # Initialize correlation and R^2 maps
+    correlation_map_mean = np.zeros(img_size)
+    correlation_map_folds = np.zeros(img_size + (5,))
+    r2_map_mean = np.zeros(img_size)
+    r2_map_folds = np.zeros(img_size + (5,))
+
 
     print(f"Processing {len(voxel_list)} voxels")
 
@@ -173,19 +183,23 @@ def main():
                 continue
 
     # Store correlations and update the fMRI-sized arrays
-    correlations = []  # List to store mean correlation values
-    for voxel, cv_scores, mean_corr in results:
+    correlations = []
+    r2_values = []
+    for voxel, cv_scores, mean_corr, r2_scores, mean_r2 in results:
         correlation_map_mean[voxel] = mean_corr
         correlation_map_folds[voxel] = cv_scores
+        r2_map_mean[voxel] = mean_r2
+        r2_map_folds[voxel] = r2_scores
         correlations.append(mean_corr)
+        r2_values.append(mean_r2)
 
     # Compute and print correlation statistics
     mean_correlation = np.mean(correlations)
-    print(f"\nCorrelation Statistics:")
-    print(f"Mean correlation: {mean_correlation:.4f}")
-    print(f"Std correlation: {np.std(correlations):.4f}")
-    print(f"Max correlation: {np.max(correlations):.4f}")
-    print(f"Min correlation: {np.min(correlations):.4f}")
+    mean_r2 = np.mean(r2_values)
+    print(f"\nStatistics:")
+    print(f"Mean correlation: {mean_correlation:.4f}, Std: {np.std(correlations):.4f}")
+    print(f"Mean R^2: {mean_r2:.4f}, Std: {np.std(r2_values):.4f}")
+    print(f"Max R^2: {np.max(r2_values):.4f}, Min R^2: {np.min(r2_values):.4f}")
     
     features_used = []
     if args.use_text:
@@ -196,27 +210,27 @@ def main():
         features_used.append("text_weighted")
     if args.use_base_features:
         features_used.append("base")
-    
     # Create a feature string (e.g., "text_audio" if both are enabled)
     feature_str = "_".join(features_used) if features_used else "nofeatures"
     
-    # Save correlation maps
-    result_file_mean = os.path.join(
-        paths["results_path"],
-        f"correlation_map_mean_{feature_str}_all_tasks.npy")
-    result_file_folds = os.path.join(
-        paths["results_path"],
-        f"correlation_map_folds_{feature_str}_all_tasks.npy")
+    # Save maps
+    result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_all_tasks.npy")
+    result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_all_tasks.npy")
+    r2_file_mean = os.path.join(paths["results_path"], f"r2_map_mean_{feature_str}_all_tasks.npy")
+    r2_file_folds = os.path.join(paths["results_path"], f"r2_map_folds_{feature_str}_all_tasks.npy")
     
     np.save(result_file_mean, correlation_map_mean)
     np.save(result_file_folds, correlation_map_folds)
-    print(f"\nCorrelation maps saved as:")
-    print(f"- Mean correlations: '{result_file_mean}'")
-    print(f"- Individual fold correlations: '{result_file_folds}'")
-
-    end_time = time.time()  # Stop timing
-    elapsed_time = end_time - start_time
-    print(f"Total execution time: {elapsed_time:.2f} seconds")
+    np.save(r2_file_mean, r2_map_mean)
+    np.save(r2_file_folds, r2_map_folds)
+    print(f"\nMaps saved as:")
+    print(f"- Mean correlations: {result_file_mean}")
+    print(f"- Fold correlations: {result_file_folds}")
+    print(f"- Mean R^2: {r2_file_mean}")
+    print(f"- Fold R^2: {r2_file_folds}")
+    
+    end_time = time.time()
+    print(f"Total execution time: {(end_time - start_time):.2f} seconds")
 
 # Run the script
 if __name__ == "__main__":

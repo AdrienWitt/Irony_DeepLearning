@@ -29,6 +29,13 @@ r_audio = np.load("results/correlation_map_mean_audio_base.npy")
 r_text = np.load("results/correlation_map_mean_text_weighted_base.npy")
 r_text_audio = np.load("results/correlation_map_mean_audio_text_weighted_base.npy")
 
+
+# # Load correlation maps
+# r_audio = np.load("results_olddata/correlation_map_mean_audio_base.npy")
+# r_text = np.load("results_olddata/correlation_map_mean_text_base.npy")
+# r_text_audio = np.load("results_olddata/correlation_map_mean_text_audio_base.npy")
+
+
 # Check shapes
 print("Correlation map shape:", r_audio.shape)
 print("MNI template shape:", mni_template.shape)
