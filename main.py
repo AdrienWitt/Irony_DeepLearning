@@ -214,10 +214,10 @@ def main():
     feature_str = "_".join(features_used) if features_used else "nofeatures"
     
     # Save maps
-    result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_all_tasks.npy")
-    result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_all_tasks.npy")
-    r2_file_mean = os.path.join(paths["results_path"], f"r2_map_mean_{feature_str}_all_tasks.npy")
-    r2_file_folds = os.path.join(paths["results_path"], f"r2_map_folds_{feature_str}_all_tasks.npy")
+    result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_iro_sar.npy")
+    result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_iro_sar.npy")
+    r2_file_mean = os.path.join(paths["results_path"], f"r2_map_mean_{feature_str}_iro_sar.npy")
+    r2_file_folds = os.path.join(paths["results_path"], f"r2_map_folds_{feature_str}_iro_sar.npy")
     
     np.save(result_file_mean, correlation_map_mean)
     np.save(result_file_folds, correlation_map_folds)

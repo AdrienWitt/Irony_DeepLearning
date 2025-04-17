@@ -21,7 +21,9 @@ class BaseDataset(Dataset):
         self.umap_n_components_text = umap_n_components_text  # UMAP parameter: output dimensions
         self.umap_n_components_audio = umap_n_components_audio  # UMAP parameter: output dimensions
         
-        self.included_tasks = ["sarcasm", "irony", "prosody", "semantic", "tom"]
+        #self.included_tasks = ["sarcasm", "irony", "prosody", "semantic", "tom"]
+        self.included_tasks = ["sarcasm", "irony"]
+        
         self.scaler = StandardScaler()
         self.register_args(**kwargs)
         self.base_data = self.create_base_data()
