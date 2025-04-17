@@ -15,20 +15,17 @@ Created on Mon Apr  7 15:45:04 2025
 import numpy as np
 import matplotlib.pyplot as plt
 import nibabel as nib
-from nilearn import plotting, datasets, image
+from nilearn import image, datasets, plotting, masking
 from scipy.ndimage import label
+import os
 
 # Load MNI template and brain mask
 mni_template = datasets.load_mni152_template(resolution=2)
-affine = mni_template.affine
-brain_mask_nifti = datasets.load_mni152_brain_mask(resolution=2)
-brain_mask = brain_mask_nifti.get_fdata().astype(bool)
 
 # Load correlation maps
-r_audio = np.load("results/correlation_map_mean_audio_base.npy")
-r_text = np.load("results/correlation_map_mean_text_weighted_base.npy")
-r_text_audio = np.load("results/correlation_map_mean_audio_text_weighted_base.npy")
-
+r_audio = np.load("results_sarcasm_irony/correlation_map_mean_audio_base.npy")
+r_text = np.load("results_sarcasm_irony/correlation_map_mean_text_weighted_base.npy")
+r_text_audio = np.load("results_sarcasm_irony/correlation_map_mean_audio_text_weighted_base.npy")
 
 # # Load correlation maps
 # r_audio = np.load("results_olddata/correlation_map_mean_audio_base.npy")
@@ -41,33 +38,65 @@ print("Correlation map shape:", r_audio.shape)
 print("MNI template shape:", mni_template.shape)
 shapes_match = r_audio.shape == mni_template.shape
 
-# Create NIfTI images
-r_audio_nifti = nib.Nifti1Image(r_audio, affine)
-r_text_nifti = nib.Nifti1Image(r_text, affine)
-r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
 
-# Resample only if needed
-if not shapes_match:
-    print("Resampling to MNI 2 mm space...")
-    r_audio_nifti = image.resample_img(r_audio_nifti, target_affine=affine, target_shape=mni_template.shape)
-    r_text_nifti = image.resample_img(r_text_nifti, target_affine=affine, target_shape=mni_template.shape)
-    r_text_audio_nifti = image.resample_img(r_text_audio_nifti, target_affine=affine, target_shape=mni_template.shape)
-    r_audio = r_audio_nifti.get_fdata()
-    r_text = r_text_nifti.get_fdata()
-    r_text_audio = r_text_audio_nifti.get_fdata()
-else:
-    print("Skipping resampling: shapes match.")
+data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"  # Replace with the path to your brain data
+output_dir = "results"
+os.makedirs(output_dir, exist_ok=True)
+mask_threshold = 0.9  # 0.9 for 90% consensus, 1.0 for strict intersection
+
+# Step 1: Collect NIfTI files and affines
+nifti_files = []
+all_affines = []
+all_headers = []
+
+for subject in os.listdir(data_folder):
+    subject_path = os.path.join(data_folder, subject)
+    if not os.path.isdir(subject_path):
+        continue
+    for file in os.listdir(subject_path):
+        if file.endswith('.nii') or file.endswith('.nii.gz'):
+            file_path = os.path.join(subject_path, file)
+            nifti_files.append(file_path)
+            nifti_img = nib.load(file_path)
+            all_affines.append(nifti_img.affine)
+            all_headers.append(nifti_img.header)
+
+# Step 2: Compute averaged affine
+header = all_headers[333]
+avg_affine = np.mean(all_affines, axis=0)
+print("Averaged affine:\n", avg_affine)
+
+
+# Create NIfTI images
+r_audio_nifti = nib.Nifti1Image(r_audio, avg_affine)
+r_text_nifti = nib.Nifti1Image(r_text, avg_affine)
+r_text_audio_nifti = nib.Nifti1Image(r_text_audio, avg_affine)
+
+
+# Create NIfTI images
+r_audio_nifti = image.crop_img(r_audio_nifti)
+r_text_nifti = _audio_nifti = image.crop_img(r_text_nifti)
+r_text_audio_nifti = _audio_nifti = image.crop_img(r_text_audio_nifti)
+
+
+# # Plot using nilearn
+# fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+# plotting.plot_glass_brain(r_text_audio_nifti, threshold=0, 
+#                          title='Significant improvement (text+audio > max(text,audio))\nFWER-corrected p < 0.05',
+#                          colorbar=True, plot_abs=False,
+#                          display_mode='ortho', axes=ax)
+
 
 # Smooth and apply brain mask
 fwhm = 6.0
-r_audio = image.smooth_img(r_audio_nifti, fwhm=fwhm).get_fdata() * brain_mask
-r_text = image.smooth_img(r_text_nifti, fwhm=fwhm).get_fdata() * brain_mask
-r_text_audio = image.smooth_img(r_text_audio_nifti, fwhm=fwhm).get_fdata() * brain_mask
+r_audio = image.smooth_img(r_audio_nifti, fwhm=fwhm).get_fdata()[:-1,:,:] 
+r_text = image.smooth_img(r_text_nifti, fwhm=fwhm).get_fdata()[:-1,:,:] 
+r_text_audio = image.smooth_img(r_text_audio_nifti, fwhm=fwhm).get_fdata()[:,:-1,:] 
 
-# Check zeros within brain
-print(f"Zero voxels in r_audio (within brain): {np.sum(r_audio[brain_mask] == 0) / np.sum(brain_mask):.2%}")
-print(f"Zero voxels in r_text (within brain): {np.sum(r_text[brain_mask] == 0) / np.sum(brain_mask):.2%}")
-print(f"Zero voxels in r_text_audio (within brain): {np.sum(r_text_audio[brain_mask] == 0) / np.sum(brain_mask):.2%}")
+
+# r_audio = r_audio * brain_mask
+# r_text = r_text * brain_mask
+# r_text_audio = r_text_audio * brain_mask
 
 # Step 1: Get the original shape
 X, Y, Z = r_audio.shape
@@ -76,18 +105,14 @@ X, Y, Z = r_audio.shape
 delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
 
 # Step 3: Filter for positive delta_r
-positive_mask = delta_r_obs_3d > 0
-delta_r_positive_3d = delta_r_obs_3d * positive_mask
+delta_r_positive_3d = delta_r_obs_3d 
 
 # Step 4: Flatten only brain voxels
-brain_mask_flat = brain_mask.ravel()
-valid_voxels = brain_mask_flat
-V = np.sum(valid_voxels)  # Number of brain voxels
-r_audio_flat = r_audio.reshape(-1)[valid_voxels]
-r_text_flat = r_text.reshape(-1)[valid_voxels]
-r_text_audio_flat = r_text_audio.reshape(-1)[valid_voxels]
-delta_r_obs_flat = delta_r_obs_3d.reshape(-1)[valid_voxels]
-positive_mask_flat = positive_mask.reshape(-1)[valid_voxels]
+V = X*Y*Z
+r_audio_flat = r_audio.reshape(-1)
+r_text_flat = r_text.reshape(-1)
+r_text_audio_flat = r_text_audio.reshape(-1)
+delta_r_obs_flat = delta_r_obs_3d.reshape(-1)
 
 # Step 5: Permutation test
 num_permutations = 5000
@@ -104,8 +129,7 @@ p_values = np.mean(delta_r_perm >= delta_r_obs_flat[:, np.newaxis], axis=1)
 
 # Step 7: Apply cluster-forming threshold
 p_values_3d = np.zeros((X, Y, Z))
-p_values_3d[brain_mask] = p_values
-initial_mask_3d = (p_values_3d < 0.05) & positive_mask
+initial_mask_3d = (p_values_3d < 0.01)
 
 # Step 8: Identify clusters in observed data
 labeled_array, num_clusters = label(initial_mask_3d, structure=np.ones((3, 3, 3)))
@@ -114,16 +138,15 @@ observed_cluster_sizes = np.bincount(labeled_array.ravel())[1:]  # Skip backgrou
 # Step 9: Compute cluster sizes in permutations
 max_cluster_sizes_perm = np.zeros(num_permutations)
 for i in range(num_permutations):
-    perm_mask_flat = (delta_r_perm[:, i] >= delta_r_obs_flat) & positive_mask_flat
+    perm_mask_flat = (delta_r_perm[:, i] >= delta_r_obs_flat)
     perm_mask_3d = np.zeros((X, Y, Z), dtype=bool)
-    perm_mask_3d[brain_mask] = perm_mask_flat
     labeled_perm, _ = label(perm_mask_3d, structure=np.ones((3, 3, 3)))
     cluster_sizes_perm = np.bincount(labeled_perm.ravel())[1:]
     max_cluster_sizes_perm[i] = np.max(cluster_sizes_perm) if cluster_sizes_perm.size > 0 else 0
 
 # Step 10: Compute cluster-level p-values
 cluster_p_values = np.array([np.mean(max_cluster_sizes_perm >= size) for size in observed_cluster_sizes])
-significant_clusters = np.where(cluster_p_values < 0.05)[0] + 1  # Cluster labels start at 1
+significant_clusters = np.where(cluster_p_values < 0.01)[0] + 1  # Cluster labels start at 1
 clustered_mask_3d = np.isin(labeled_array, significant_clusters)
 
 # Step 11: Update significance map
@@ -138,7 +161,7 @@ else:
     print(f"Cluster p-values: {cluster_p_values}")
 
 # Create and save NIfTI
-significance_nifti = nib.Nifti1Image(significance_map_3d, affine)
+significance_nifti = nib.Nifti1Image(significance_map_3d, avg_affine)
 nib.save(significance_nifti, 'results/significant_improvements_cluster_corrected_masked.nii')
 
 
