@@ -44,6 +44,9 @@ def parse_arguments():
                                 help="Use UMAP for dimensionality reduction (default: False).")
     dataset_group.add_argument("--pca_threshold", type=float, default=0.60,
                             help="Explained variance threshold for PCA (default: 0.60).")
+    dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
+                            help="List of tasks to include (default: all available tasks).")
+    
 
     # **Analysis-related arguments**
     analysis_group = parser.add_argument_group("Analysis Arguments")
@@ -137,11 +140,12 @@ def main():
           f"- Use UMAP: {args.use_umap}\n"
           f"- PCA threshold: {args.pca_threshold}\n"
           f"- Ridge alpha: {args.alpha}\n"
-          f"- Number of parallel jobs: {args.num_jobs}")
+          f"- Number of parallel jobs: {args.num_jobs}\n"
+          f"- Included tasks: {', '.join(args.include_tasks)}")
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = os.listdir(paths["data_path"])[0:10]
+    participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
@@ -213,11 +217,14 @@ def main():
     # Create a feature string (e.g., "text_audio" if both are enabled)
     feature_str = "_".join(features_used) if features_used else "nofeatures"
     
+    # Create task code string (first 3 letters of each task)
+    task_code = "_".join([task[:3] for task in args.include_tasks])
+    
     # Save maps
-    result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_iro_sar.npy")
-    result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_iro_sar.npy")
-    r2_file_mean = os.path.join(paths["results_path"], f"r2_map_mean_{feature_str}_iro_sar.npy")
-    r2_file_folds = os.path.join(paths["results_path"], f"r2_map_folds_{feature_str}_iro_sar.npy")
+    result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_{task_code}.npy")
+    result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_{task_code}.npy")
+    r2_file_mean = os.path.join(paths["results_path"], f"r2_map_mean_{feature_str}_{task_code}.npy")
+    r2_file_folds = os.path.join(paths["results_path"], f"r2_map_folds_{feature_str}_{task_code}.npy")
     
     np.save(result_file_mean, correlation_map_mean)
     np.save(result_file_folds, correlation_map_folds)

@@ -45,7 +45,8 @@ def load_dataset(args, paths, participant_list):
         "use_text_weighted": args.use_text_weighted,
         "pca_threshold": args.pca_threshold,
         "use_pca" : args.use_pca,
-        "use_umap" : args.use_umap
+        "use_umap" : args.use_umap,
+        "included_tasks": args.include_tasks
     }
 
     database = dataset.BaseDataset(participant_list=participant_list, **dataset_args)

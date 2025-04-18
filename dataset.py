@@ -10,7 +10,8 @@ import umap
 
 class BaseDataset(Dataset):
     def __init__(self, participant_list, data_path, fmri_data_path, 
-                 pca_threshold=0.50, umap_n_neighbors=15, umap_min_dist=0.1, umap_n_components_text=5, umap_n_components_audio = 18, **kwargs):
+                 pca_threshold=0.50, umap_n_neighbors=15, umap_min_dist=0.1, umap_n_components_text=5, umap_n_components_audio = 18,
+                 included_tasks=None, **kwargs):
         super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path
@@ -21,8 +22,8 @@ class BaseDataset(Dataset):
         self.umap_n_components_text = umap_n_components_text  # UMAP parameter: output dimensions
         self.umap_n_components_audio = umap_n_components_audio  # UMAP parameter: output dimensions
         
-        #self.included_tasks = ["sarcasm", "irony", "prosody", "semantic", "tom"]
-        self.included_tasks = ["sarcasm", "irony"]
+        # Set included tasks, with default if not provided
+        self.included_tasks = included_tasks or ["sarcasm", "irony", "prosody", "semantic", "tom"]
         
         self.scaler = StandardScaler()
         self.register_args(**kwargs)
@@ -38,6 +39,8 @@ class BaseDataset(Dataset):
     def create_base_data(self):
         """Sets up the data by loading and processing fMRI data."""
         base_data = []
+        task_counts = {task: 0 for task in self.included_tasks}
+        
         for participant in self.participant_list:
             participant_data_path = os.path.join(self.data_path, participant)
             dfs = processing_helpers.load_dataframe(participant_data_path)
@@ -48,6 +51,10 @@ class BaseDataset(Dataset):
                     task = row["task"]
                     if task not in self.included_tasks:
                         continue
+                    
+                    # Increment task counter for statistics
+                    task_counts[task] += 1
+                    
                     context = row["Context"]
                     statement = row["Statement"]
                     situation = row["Situation"]
@@ -77,6 +84,12 @@ class BaseDataset(Dataset):
                         "age": age,
                         "gender": genre
                     })
+                    
+        # Print statistics on loaded data
+        print(f"Loaded {len(base_data)} total samples")
+        for task, count in task_counts.items():
+            print(f"  - {task}: {count} samples")
+            
         return base_data
     
     def apply_pca(self, embeddings_df, prefix):

@@ -1,62 +1,38 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Apr 14 12:14:14 2025
-
-@author: adywi
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Apr  7 15:45:04 2025
-
-@author: adywi
-"""
-
 import numpy as np
 import matplotlib.pyplot as plt
 import nibabel as nib
 from nilearn import plotting, datasets, image
 from scipy.ndimage import label
-
-# Load MNI template and brain mask
-mni_template = datasets.load_mni152_template(resolution=2)
-affine = mni_template.affine
-brain_mask_nifti = datasets.load_mni152_brain_mask(resolution=2)
-brain_mask = brain_mask_nifti.get_fdata().astype(bool)
+import os
 
 # Load correlation maps
-r_audio = np.load("results/correlation_map_mean_audio_base.npy")
-r_text = np.load("results/correlation_map_mean_text_weighted_base.npy")
-r_text_audio = np.load("results/correlation_map_mean_audio_text_weighted_base.npy")
+r_audio = np.load("results/correlation_map_mean_audio_base_all_tasks.npy")
+r_text = np.load("results/correlation_map_mean_text_weighted_base_all_tasks.npy")
+r_text_audio = np.load("results/correlation_map_mean_audio_text_weighted_base_iro_sar.npy")
+brain_mask = np.logical_and(r_audio != 0, np.logical_and(r_text != 0, r_text_audio != 0))
 
 
-# # Load correlation maps
-# r_audio = np.load("results_olddata/correlation_map_mean_audio_base.npy")
-# r_text = np.load("results_olddata/correlation_map_mean_text_base.npy")
-# r_text_audio = np.load("results_olddata/correlation_map_mean_text_audio_base.npy")
+## Commute mean affine
 
+data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"  # Replace with the path to your brain data
+##compute average affine
+all_affines = []
+all_headers = []
+for subject in os.listdir(data_folder):
+    subject_path = os.path.join(data_folder, subject)
+    for file in os.listdir(subject_path):  # Fixed variable name 'files' to 'file'
+        if file.endswith('.nii') or file.endswith('.nii.gz'):  # Check for NIfTI files
+            file_path = os.path.join(subject_path, file)  # Fixed os.path.join syntax
+            nifti_img = nib.load(file_path)
+            all_affines.append(nifti_img.affine)
+            all_headers.append(nifti_img.header)
 
-# Check shapes
-print("Correlation map shape:", r_audio.shape)
-print("MNI template shape:", mni_template.shape)
-shapes_match = r_audio.shape == mni_template.shape
+affine = np.array(np.mean(all_affines, axis=0))
 
 # Create NIfTI images
 r_audio_nifti = nib.Nifti1Image(r_audio, affine)
 r_text_nifti = nib.Nifti1Image(r_text, affine)
 r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
-
-# Resample only if needed
-if not shapes_match:
-    print("Resampling to MNI 2 mm space...")
-    r_audio_nifti = image.resample_img(r_audio_nifti, target_affine=affine, target_shape=mni_template.shape)
-    r_text_nifti = image.resample_img(r_text_nifti, target_affine=affine, target_shape=mni_template.shape)
-    r_text_audio_nifti = image.resample_img(r_text_audio_nifti, target_affine=affine, target_shape=mni_template.shape)
-    r_audio = r_audio_nifti.get_fdata()
-    r_text = r_text_nifti.get_fdata()
-    r_text_audio = r_text_audio_nifti.get_fdata()
-else:
-    print("Skipping resampling: shapes match.")
 
 # Smooth and apply brain mask
 fwhm = 6.0
