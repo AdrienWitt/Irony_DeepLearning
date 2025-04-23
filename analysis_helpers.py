@@ -12,7 +12,8 @@ def get_paths():
         "fmri_data_path": os.path.join(base_path, "data", "fmri", "weighted"),
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
-        "results_path": os.path.join(base_path, "results"),
+        "embeddings_audio_opensmile_path": os.path.join(base_path, "embeddings", "audio_opensmile"),
+        "results_path": os.path.join(base_path, "results_test"),
     }
 
     os.makedirs(paths["results_path"], exist_ok=True)
@@ -39,9 +40,11 @@ def load_dataset(args, paths, participant_list):
         "fmri_data_path": paths["fmri_data_path"],
         "embeddings_text_path": paths["embeddings_text_path"],
         "embeddings_audio_path": paths["embeddings_audio_path"],
+        "embeddings_audio_opensmile_path": paths["embeddings_audio_opensmile_path"],
         "use_base_features": args.use_base_features,
         "use_text": args.use_text,
         "use_audio": args.use_audio,
+        "use_audio_opensmile": args.use_audio_opensmile,
         "use_text_weighted": args.use_text_weighted,
         "pca_threshold": args.pca_threshold,
         "use_pca" : args.use_pca,

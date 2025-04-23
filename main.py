@@ -11,18 +11,20 @@ import analysis_helpers
 from sklearn.metrics import r2_score
 
 
-# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-# args = argparse.Namespace(
-#     use_audio = True,
-#     use_text = False,
-#     use_base_features=True,
-#     use_text_weighted = True,
-#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
+os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+args = argparse.Namespace(
+    use_audio = False,
+    use_text = False,
+    use_base_features=True,
+    use_text_weighted = True,
+    use_audio_opensmile = True,
+    include_tasks = ["irony", "sarcasm"],
+    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 
-# df_train = database_train.get_voxel_values(((50, 50, 50)))
+df_train = database_train.get_voxel_values(((50, 50, 50)))
 
-# Set a reliable temporary directory for joblib
+
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
 
 def parse_arguments():
@@ -36,6 +38,8 @@ def parse_arguments():
                                 help="Include text in dataset (default: False).")
     dataset_group.add_argument("--use_audio", action="store_true", 
                                 help="Include audio in dataset (default: False).")
+    dataset_group.add_argument("--use_audio_opensmile", action="store_true", 
+                                help="Include openSMILE audio features in dataset (default: False).")
     dataset_group.add_argument("--use_text_weighted", action="store_true", 
                                 help="Include text_weighted in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
@@ -135,6 +139,7 @@ def main():
           f"- Use base features: {args.use_base_features}\n"
           f"- Use text: {args.use_text}\n"
           f"- Use audio: {args.use_audio}\n"
+          f"- Use audio_opensmile: {args.use_audio_opensmile}\n"
           f"- Use text_weighted: {args.use_text_weighted}\n"
           f"- Use PCA: {args.use_pca}\n"
           f"- Use UMAP: {args.use_umap}\n"
@@ -210,6 +215,8 @@ def main():
         features_used.append("text")
     if args.use_audio:
         features_used.append("audio")
+    if args.use_audio_opensmile:
+        features_used.append("audio_opensmile")
     if args.use_text_weighted:
         features_used.append("text_weighted")
     if args.use_base_features:

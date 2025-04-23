@@ -38,7 +38,7 @@ create_text_cls(statements_path, model_text, tokenizer_text, output_dir)
 context_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\text\contexts"
 create_text_cls(context_path, model_text, tokenizer_text, output_dir)
 
-        
+###################################################################################################################################        
 # Create audio embeddings
 
 audio_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\audio"
@@ -68,7 +68,6 @@ import os
 import numpy as np
 from transformers import CamembertModel, CamembertTokenizer
 import torch
-
 
 def context_sentence_embeddings(contexts_path, statements_path, output_dir='./'):
     combined_output_dir = os.path.join(output_dir, "text_combined")
@@ -134,4 +133,26 @@ contexts_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experimen
 statements_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\text\statements"
 output_dir = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\embeddings\text"
 context_sentence_embeddings(contexts_path, statements_path, output_dir)
+
+###################################################################################################################
+
+audio_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\audio"
+output_dir = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\embeddings\audio_opensmile"
+
+import opensmile
+# Initialize OpenSMILE with eGeMAPS feature set
+smile = opensmile.Smile(
+    feature_set=opensmile.FeatureSet.eGeMAPSv02,
+    feature_level=opensmile.FeatureLevel.Functionals
+)
+
+
+def create_audio_embeddings(audio_path, model, processor, output_dir):
+    for filename in os.listdir(audio_path):
+        file_path = os.path.join(audio_path, filename)
+        y, sr = torchaudio.load(file_path)
+        features = smile.process_signal(signal=y.squeeze().numpy(), sampling_rate=sr)
+        np.save(os.path.join(output_dir, filename.replace('.wav', '_opensmile.npy')), features)
+    
+create_audio_embeddings(audio_path, model, processor, output_dir) 
 

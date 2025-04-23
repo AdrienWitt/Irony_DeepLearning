@@ -44,7 +44,7 @@ def load_dataframe(participant_path):
 
 def crop_skull_background(fmri):
     mask = compute_epi_mask(fmri)
-    print(mask.shape)
+    print(f"original affine : {fmri.affine}")
     masked_list = []
     for img in iter_img(fmri):
         masked = math_img('img*mask', img=img, mask=mask)
@@ -84,6 +84,7 @@ for file_type in files_type:
             cropped_img = crop_skull_background(concatenated_img)
             fmri = cropped_img.get_fdata()
             affine = cropped_img.affine
+            print("f masked affine : {affine}")
             header = cropped_img.header
             fmri_normalized = mean_z_norm(fmri)
 
@@ -149,6 +150,6 @@ for file_type in files_type:
                 subj_dir = os.path.join(output_dir_fmri, participant)
                 if not os.path.exists(subj_dir):
                     os.makedirs(subj_dir)
-                nib.save(file, os.path.join(subj_dir, filename + ".nii.gz"))
+                #nib.save(file, os.path.join(subj_dir, filename + ".nii.gz"))
 
 print("Processing complete.")

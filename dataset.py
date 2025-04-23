@@ -118,6 +118,7 @@ class BaseDataset(Dataset):
         embeddings_text_list = []
         embeddings_audio_list = []
         embeddings_weighted_list = []
+        embeddings_audio_opensmile_list = []
         
         for item in self.base_data:
             fmri_value = None
@@ -148,6 +149,9 @@ class BaseDataset(Dataset):
             
             embeddings_text_weighted = np.load(os.path.join(self.embeddings_text_path, "text_weighted", f"{context}_{item['situation']}_{semantic}_{item['situation']}_weighted.npy"))
             embeddings_weighted_list.append(embeddings_text_weighted)
+            
+            embeddings_audio_opensmile = np.load(os.path.join(self.embeddings_audio_opensmile_path, f"{item['statement'].replace('.wav', '_opensmile.npy')}"))
+            embeddings_audio_opensmile_list.append(embeddings_audio_opensmile)
 
         if self.use_base_features:
             df = pd.DataFrame(final_data)
@@ -176,6 +180,24 @@ class BaseDataset(Dataset):
                 df_scaled = pd.DataFrame(embeddings_scaled, columns=embeddings_df.columns)
                 df = pd.concat([df, df_scaled], axis=1)
 
+        
+        # Process context embeddings
+        if self.use_text_weighted:
+            embeddings_df = pd.DataFrame(np.vstack(embeddings_weighted_list))
+            embeddings_df.columns = [f"emb_weighted_{i}" for i in range(embeddings_df.shape[1])]
+            
+            if self.use_umap:
+                df_umap_weighted = self.apply_umap(embeddings_df, prefix="umap_context")
+                df = pd.concat([df, df_umap_weighted], axis=1)
+            elif self.use_pca:
+                df_pca_weighted = self.apply_pca(embeddings_df, prefix="pc_weighted")
+                df = pd.concat([df, df_pca_weighted], axis=1)
+            else:
+                # Scale raw embeddings if no dimensionality reduction
+                embeddings_scaled = self.scaler.fit_transform(embeddings_df)
+                df_scaled = pd.DataFrame(embeddings_scaled, columns=embeddings_df.columns)
+                df = pd.concat([df, df_scaled], axis=1)
+        
         # Process audio embeddings
         if self.use_audio:
             embeddings_df = pd.DataFrame(np.vstack(embeddings_audio_list))
@@ -191,18 +213,17 @@ class BaseDataset(Dataset):
                 embeddings_scaled = self.scaler.fit_transform(embeddings_df)
                 df_scaled = pd.DataFrame(embeddings_scaled, columns=embeddings_df.columns)
                 df = pd.concat([df, df_scaled], axis=1)
-
-        # Process context embeddings
-        if self.use_text_weighted:
-            embeddings_df = pd.DataFrame(np.vstack(embeddings_weighted_list))
-            embeddings_df.columns = [f"emb_weighted_{i}" for i in range(embeddings_df.shape[1])]
-            
+                
+        # Process openSMILE audio features
+        if self.use_audio_opensmile:
+            embeddings_df = pd.DataFrame(np.vstack(embeddings_audio_opensmile_list))
+            embeddings_df.columns = [f"emb_audio_opensmile_{i}" for i in range(embeddings_df.shape[1])]
             if self.use_umap:
-                df_umap_weighted = self.apply_umap(embeddings_df, prefix="umap_context")
-                df = pd.concat([df, df_umap_weighted], axis=1)
+                df_umap_opensmile = self.apply_umap(embeddings_df, min(10, embeddings_df.shape[1]), prefix="umap_audio_opensmile")
+                df = pd.concat([df, df_umap_opensmile], axis=1)
             elif self.use_pca:
-                df_pca_weighted = self.apply_pca(embeddings_df, prefix="pc_weighted")
-                df = pd.concat([df, df_pca_weighted], axis=1)
+                df_pca_opensmile = self.apply_pca(embeddings_df, prefix="pc_audio_opensmile")
+                df = pd.concat([df, df_pca_opensmile], axis=1)
             else:
                 # Scale raw embeddings if no dimensionality reduction
                 embeddings_scaled = self.scaler.fit_transform(embeddings_df)
