@@ -128,7 +128,15 @@ def compare_audio_features(voxel, df_train, alpha):
     
     scores['n_samples'] = sum(valid_idx)
     
-    print(f"Voxel {voxel}: wav2vec={scores['wav2vec']:.4f}, opensmile={scores['opensmile']:.4f}, combined={scores['combined']:.4f}")
+    # Print more comprehensive output including base features
+    print(f"Voxel {voxel}:")
+    print(f"  - wav2vec: {scores['wav2vec']:.4f}")
+    print(f"  - opensmile: {scores['opensmile']:.4f}")
+    print(f"  - combined: {scores['combined']:.4f}")
+    if len(base_cols) > 0:
+        print(f"  - wav2vec+base: {scores['wav2vec_with_base']:.4f}")
+        print(f"  - opensmile+base: {scores['opensmile_with_base']:.4f}")
+        print(f"  - combined+base: {scores['combined_with_base']:.4f}")
     
     return voxel, scores
 
