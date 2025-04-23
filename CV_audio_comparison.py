@@ -42,8 +42,6 @@ def parse_arguments():
                              help="Use UMAP for dimensionality reduction (default: False)")
     dataset_group.add_argument("--pca_threshold", type=float, default=0.80,
                              help="PCA threshold for dataset (default: 0.80)")
-    dataset_group.add_argument("--num_voxels", type=int, default=100,
-                             help="Number of top voxels to analyze (default: 100)")
     dataset_group.add_argument("--num_jobs", type=int, default=4,
                              help="Number of parallel jobs (default: 4)")
     dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony"],
@@ -151,7 +149,6 @@ def main():
     print(f"- Use UMAP: {args.use_umap}")
     print(f"- PCA threshold: {args.pca_threshold}")
     print(f"- Alpha value: {args.alpha}")
-    print(f"- Number of top voxels: {args.num_voxels}")
     print(f"- Number of parallel jobs: {args.num_jobs}")
     print(f"- Included tasks: {', '.join(args.include_tasks)}")
     
@@ -185,7 +182,6 @@ def main():
     voxel_list = list(np.ndindex(img_size))
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database, img_size, voxel_list, top_voxels_path)
-    #top_voxels = top_voxels[:args.num_voxels]  # Limit to specified number of voxels
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Configure parallel processing
