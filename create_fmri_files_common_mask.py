@@ -20,7 +20,9 @@ from pydub import AudioSegment
 folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
 files_type = ['swrMF']
-output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masked'
+output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masked_unormalized'
+if not os.path.exists(output_dir_fmri):
+    os.makedirs(output_dir_fmri)
 output_dir_mask = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks'
 
 group_mask_dir = os.path.join(output_dir_mask, 'group_mask')
@@ -58,8 +60,7 @@ def crop_skull_background(fmri, participant, run_number, output_dir, group_mask=
     if group_mask is not None:
         # Resample group mask to match fMRI data
         mask = group_mask
-        mask_filename = os.path.join(output_dir, f"{participant}_{run_number}_mask.nii.gz")
-        nib.save(mask, mask_filename)
+        mask_filename = None
     else:
         # Generate and save individual mask
         mask = compute_epi_mask(fmri)
@@ -88,17 +89,34 @@ def mean_z_norm(fmri):
     fmri_temp[nonzero_mask] = (fmri[nonzero_mask] - global_mean) / global_std
     return fmri_temp
 
-def compute_group_mask(mask_files, output_dir):
+def compute_group_mask_inter(mask_files, output_dir):
     if not mask_files:
         raise ValueError("No mask files found to compute group mask.")
     masks = [nib.load(f) for f in mask_files]
     # Compute intersection (all voxels must be non-zero in all masks)
     group_mask_data = np.prod([img.get_fdata() for img in masks], axis=0)
     group_mask = nib.Nifti1Image(group_mask_data, masks[0].affine, masks[0].header)
-    group_mask_filename = os.path.join(output_dir, "group_mask.nii.gz")
+    group_mask_filename = os.path.join(output_dir, "group_mask_inter.nii.gz")
     nib.save(group_mask, group_mask_filename)
     print(f"Group mask saved to {group_mask_filename}")
     return group_mask_filename
+
+def compute_group_mask_threshold(mask_files, output_dir, threshold=0.85):
+    if not mask_files:
+        raise ValueError("No mask files found to compute group mask.")
+    # Load masks
+    masks = [nib.load(f) for f in mask_files]    
+    mask_sum = np.sum([img.get_fdata() for img in masks], axis=0)
+    # Compute thresholded group mask (voxels where overlap >= threshold * num_masks)
+    num_masks = len(mask_files)
+    group_mask_data = (mask_sum >= threshold * num_masks).astype(np.int16)    
+    group_mask = nib.Nifti1Image(group_mask_data, masks[10].affine, masks[10].header)    
+    group_mask_filename = os.path.join(output_dir, f"group_mask_threshold_{threshold}.nii.gz")
+    nib.save(group_mask, group_mask_filename)
+    print(f"Group mask saved to {group_mask_filename}")
+    
+    return group_mask_filename
+
 
 # Step 1: Collect or generate individual masks
 mask_files = []
@@ -124,8 +142,28 @@ for file_type in files_type:
                 mask_files.append(mask_filename)
 
 # Step 2: Compute group mask
-group_mask_filename = compute_group_mask(mask_files, group_mask_dir)
+group_mask_filename = compute_group_mask_threshold(mask_files, group_mask_dir)
 group_mask = nib.load(group_mask_filename)
+
+# group_mask = nib.load(r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold.nii.gz')
+
+# import matplotlib.pyplot as plt
+# from nilearn import plotting
+
+# # Plot glass brain (all significant clusters)
+# fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+# plotting.plot_glass_brain(
+#     group_mask,
+#     threshold=0,
+#     title='Significant Delta R² (Text+Audio vs Max(Text,Audio))\nFWER-corrected p < 0.05',
+#     colorbar=True,
+#     plot_abs=False,
+#     display_mode='ortho',
+#     axes=ax
+# )
+# plt.tight_layout()
+
+
 
 # Step 3: Reprocess fMRI data with group mask
 for file_type in files_type:
@@ -202,7 +240,7 @@ for file_type in files_type:
 
                 # Save fMRI data
                 file = nib.Nifti1Image(weighted_scans, affine, header)
-                filename = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement_weighted'
+                filename = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement_masked'
                 nib.save(file, os.path.join(subj_dir, filename + ".nii.gz"))
 
 print("Processing complete.")

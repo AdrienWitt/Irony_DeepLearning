@@ -15,6 +15,16 @@ import analysis_helpers
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
 
+args = argparse.Namespace(
+    use_audio = False,
+    use_text = False,
+    use_base_features=True,
+    use_text_weighted = True,
+    use_audio_opensmile = True,
+    include_tasks = ["irony", "sarcasm"],
+    use_pca=False, num_jobs = 1, alpha = 0.1, pca_thresholds = [0.5, 0.6], 
+    use_umap = False, step = 2, step2_use_best_base = False, pca_threshold = 0.5)
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
@@ -34,14 +44,17 @@ def parse_arguments():
                              help="Include audio in dataset (default: False).")
     dataset_group.add_argument("--use_text_weighted", action="store_true", 
                              help="Include text_weighted in dataset (default: False).")
+    dataset_group.add_argument("--use_audio_opensmile", action="store_true", 
+                                help="Include openSMILE audio features in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true",
                              help="Use PCA for embeddings (default: False)")
     dataset_group.add_argument("--use_umap", action="store_true",
                              help="Use umaps for embeddings (default: False)")
-    dataset_group.add_argument("--pca_threshold", type=float, default=0.50,
+    dataset_group.add_argument("--pca_threshold", type=float, default=1,
                              help="PCA threshold for dataset (default: 0.50)")
-
-
+    dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
+                            help="List of tasks to include (default: all available tasks).")
+    
     # **Analysis-related arguments**
     analysis_group = parser.add_argument_group("Analysis Arguments")
     analysis_group.add_argument("--num_jobs", type=int, default=20,
@@ -82,6 +95,7 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
     # Identify embedding columns
     text_cols = [col for col in df_train.columns if col.startswith(('emb_weighted_', 'pc_weighted_'))]
     audio_cols = [col for col in df_train.columns if col.startswith(('emb_audio_', 'pc_audio_'))]
+    print(audio_cols)
     embedding_cols = text_cols + audio_cols    
     
     # Prepare features and target
@@ -259,8 +273,10 @@ def main():
     print(f"- Use base features: {args.use_base_features}")
     print(f"- Use text: {args.use_text}")
     print(f"- Use audio: {args.use_audio}")
+    print(f"- Use audio opensmile: {args.use_audio_opensmile}")
     print(f"- Use text_weighted: {args.use_text_weighted}")
     print(f"- Use PCA: {args.use_pca}")
+    print(f"- Include tasks: {args.include_tasks}")
     print(f"- Number of parallel jobs: {args.num_jobs}")
     
     if args.step == 1:
@@ -287,7 +303,7 @@ def main():
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(img_size), voxel_list, top_voxels_path)
-    top_voxels = top_voxels[:100]
+    #top_voxels = top_voxels[:100]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Configure parallel processing

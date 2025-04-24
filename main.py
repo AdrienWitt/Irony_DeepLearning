@@ -9,20 +9,20 @@ from joblib import Parallel, delayed
 import dataset  
 import analysis_helpers
 from sklearn.metrics import r2_score
+import nibabel as nib
+
+os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+args = argparse.Namespace(
+    use_audio = False,
+    use_text = False,
+    use_base_features=True,
+    use_text_weighted = True,
+    use_audio_opensmile = True,
+    include_tasks = ["irony", "sarcasm"],
+    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 
-# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-# args = argparse.Namespace(
-#     use_audio = False,
-#     use_text = False,
-#     use_base_features=True,
-#     use_text_weighted = True,
-#     use_audio_opensmile = True,
-#     include_tasks = ["irony", "sarcasm"],
-#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
-
-
-# df_train = database_train.get_voxel_values(((50, 50, 50)))
+df_train = database_train.get_voxel_values(((50, 50, 50)))
 
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
@@ -78,6 +78,13 @@ def voxel_analysis(voxel, df_train, alpha):
     if len(X_filtered) < len(X)*0.5:
         print(f"No enough data for voxel {voxel} after filtering")
         return voxel, [0] * 5, 0, [0] * 5, 0  # Return zeros for correlations and R^2
+    
+    # Normalize y_filtered (z-score non-zero values)
+    if np.std(y_filtered) > 0:
+        y_filtered = (y_filtered - np.mean(y_filtered)) / np.std(y_filtered)
+    else:
+        print(f"Skipping voxel {voxel}: y_filtered has zero variance after filtering")
+        return voxel, [0] * 5, 0, [0] * 5, 0
     
     # Perform 5-fold cross-validation on filtered data
     from sklearn.model_selection import KFold
@@ -155,9 +162,16 @@ def main():
     
     alpha = adjust_alpha(database_train, args)
     
+     # Load group mask
+    group_mask_file = os.path.join(paths["fmri_data_path"], "group_mask", "group_mask.nii.gz")
+    group_mask_nifti = nib.load(group_mask_file)
+    group_mask = group_mask_nifti.get_fdata() > 0
+    affine = group_mask_nifti.affine
+    
+    
     # Generate voxel list dynamically
     img_size = (79, 95, 79)
-    voxel_list = list(np.ndindex(img_size))
+    voxel_list = [(i, j, k) for i, j, k in np.ndindex(img_size) if group_mask[i, j, k]]
     # voxel_list = voxel_list[40000:50000]
 
     # Initialize correlation and R^2 maps

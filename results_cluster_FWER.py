@@ -9,7 +9,7 @@ import os
 r_audio = np.load("results/r2_map_mean_audio_base_iro_sar.npy")
 r_text = np.load("results/r2_map_mean_text_weighted_base_iro_sar.npy")
 r_text_audio = np.load("results/r2_map_mean_audio_text_weighted_base_iro_sar.npy")
-#brain_mask = np.logical_and.reduce([r_audio != 0, r_text != 0, r_text_audio != 0])
+brain_mask = nib.load(r'C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_85.nii.gz')
 
 # Compute mean affine
 data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"
@@ -34,18 +34,18 @@ r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
 # test_nifti = nib.Nifti1Image(test, affine)
 
 
-# # Plot glass brain (all significant clusters)
-# fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-# plotting.plot_glass_brain(
-#     test_nifti,
-#     threshold=0,
-#     title='Significant Delta R² (Text+Audio vs Max(Text,Audio))\nFWER-corrected p < 0.05',
-#     colorbar=True,
-#     plot_abs=False,
-#     display_mode='ortho',
-#     axes=ax
-# )
-# plt.tight_layout()
+# Plot glass brain (all significant clusters)
+fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+plotting.plot_glass_brain(
+    brain_mask,
+    threshold=0,
+    title='Significant Delta R² (Text+Audio vs Max(Text,Audio))\nFWER-corrected p < 0.05',
+    colorbar=True,
+    plot_abs=False,
+    display_mode='ortho',
+    axes=ax
+)
+plt.tight_layout()
 
 # Load and resample MNI152 brain mask
 mni_brain_mask = datasets.load_mni152_brain_mask(resolution=2)
