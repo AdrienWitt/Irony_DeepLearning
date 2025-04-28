@@ -21,7 +21,6 @@ import nibabel as nib
 #     include_tasks = ["irony", "sarcasm"],
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
-
 # df_train = database_train.get_voxel_values(((50, 50, 50)))
 
 

@@ -9,7 +9,7 @@ def get_paths():
 
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri", "group_masked_unormalized"),
+        "fmri_data_path": os.path.join(base_path, "data", "fmri", "group_masked_mc"),
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "embeddings_audio_opensmile_path": os.path.join(base_path, "embeddings", "audio_opensmile"),
