@@ -14,7 +14,6 @@ from nilearn.masking import compute_epi_mask
 from nilearn.image import resample_to_img
 import pandas as pd
 from nilearn.glm.first_level import compute_regressor
-from pydub import AudioSegment
 
 # Define paths
 folder_fmri = r'D:\Preproc_Analyses\data_done'
@@ -89,6 +88,19 @@ def mean_z_norm(fmri):
     fmri_temp[nonzero_mask] = (fmri[nonzero_mask] - global_mean) / global_std
     return fmri_temp
 
+def mean_center(fmri):
+    """Center non-zero voxels by subtracting their mean, preserving variance."""
+    nonzero_mask = fmri != 0
+    nonzero_voxels = fmri[nonzero_mask]
+    if len(nonzero_voxels) == 0:
+        print("Warning: No nonzero voxels found!")
+        return fmri
+    global_mean = np.mean(nonzero_voxels)
+    print(f"Mean (excluding background): {global_mean}")
+    fmri_temp = fmri.copy()
+    fmri_temp[nonzero_mask] -= global_mean
+    return fmri_temp
+
 def compute_group_mask_inter(mask_files, output_dir):
     if not mask_files:
         raise ValueError("No mask files found to compute group mask.")
@@ -145,26 +157,6 @@ for file_type in files_type:
 group_mask_filename = compute_group_mask_threshold(mask_files, group_mask_dir)
 group_mask = nib.load(group_mask_filename)
 
-# group_mask = nib.load(r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold.nii.gz')
-
-# import matplotlib.pyplot as plt
-# from nilearn import plotting
-
-# # Plot glass brain (all significant clusters)
-# fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-# plotting.plot_glass_brain(
-#     group_mask,
-#     threshold=0,
-#     title='Significant Delta R² (Text+Audio vs Max(Text,Audio))\nFWER-corrected p < 0.05',
-#     colorbar=True,
-#     plot_abs=False,
-#     display_mode='ortho',
-#     axes=ax
-# )
-# plt.tight_layout()
-
-
-
 # Step 3: Reprocess fMRI data with group mask
 for file_type in files_type:
     participant_files = select_files(folder_fmri, file_type)
@@ -180,7 +172,7 @@ for file_type in files_type:
             fmri = cropped_img.get_fdata()
             affine = cropped_img.affine
             header = cropped_img.header
-            #fmri_normalized = mean_z_norm(fmri)
+            #fmri_normalized = mean_center(fmri)
             fmri_normalized = fmri
 
             # Get corresponding dataframe
@@ -230,6 +222,7 @@ for file_type in files_type:
                 # Extract scans and HRF weights
                 scans = fmri_normalized[..., start_scan:end_scan]
                 hrf_weights = hrf_regressor[start_scan:end_scan, 0]
+                hrf_weights = hrf_weights / np.sum(hrf_weights)
 
                 # Compute HRF-weighted average
                 if scans.shape[-1] > 0 and len(hrf_weights) == scans.shape[-1]:

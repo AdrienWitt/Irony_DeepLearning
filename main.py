@@ -132,7 +132,7 @@ def adjust_alpha(database_train, args):
     if args.use_audio and args.use_text_weighted:
         alpha = args.alpha
     else: 
-        alpha = args.alpha * df.shape[1] / 84 ## 79 is the total number of features with PCA 0.50 threshold for text and audio
+        alpha = args.alpha * df.shape[1] / 73 ## 79 is the total number of features with PCA 0.50 threshold for text and audio
         print(f"- Use correced alpha: {alpha}")
     return alpha
     
@@ -157,22 +157,19 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    participant_list = os.listdir(paths["data_path"])[0:10]
+    #participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
     
      # Load group mask
-    group_mask_file = os.path.join(paths["fmri_data_path"], "group_mask", "group_mask.nii.gz")
-    group_mask_nifti = nib.load(group_mask_file)
+    group_mask_nifti = nib.load(paths["group_mask_path"])
     group_mask = group_mask_nifti.get_fdata() > 0
-    affine = group_mask_nifti.affine
-    
     
     # Generate voxel list dynamically
     img_size = (79, 95, 79)
     voxel_list = [(i, j, k) for i, j, k in np.ndindex(img_size) if group_mask[i, j, k]]
-    # voxel_list = voxel_list[40000:50000]
+    #voxel_list = voxel_list[0:100]
 
     # Initialize correlation and R^2 maps
     correlation_map_mean = np.zeros(img_size)
@@ -216,6 +213,11 @@ def main():
         correlations.append(mean_corr)
         r2_values.append(mean_r2)
 
+    correlation_map_mean = correlation_map_mean * group_mask
+    correlation_map_folds = correlation_map_folds * group_mask[..., np.newaxis]
+    r2_map_mean = r2_map_mean * group_mask
+    r2_map_folds = r2_map_folds * group_mask[..., np.newaxis]
+
     # Compute and print correlation statistics
     mean_correlation = np.mean(correlations)
     mean_r2 = np.mean(r2_values)
@@ -241,6 +243,7 @@ def main():
     # Create task code string (first 3 letters of each task)
     task_code = "_".join([task[:3] for task in args.include_tasks])
     
+        
     # Save maps
     result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_{task_code}.npy")
     result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_{task_code}.npy")

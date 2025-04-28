@@ -91,29 +91,34 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
     
     df_train = df_train.sample(frac=1, random_state=random_seed).reset_index(drop=True)
 
-    
-    # Identify embedding columns
+    # Identify embedding columns based on available modalities
     text_cols = [col for col in df_train.columns if col.startswith(('emb_weighted_', 'pc_weighted_'))]
     audio_cols = [col for col in df_train.columns if col.startswith(('emb_audio_', 'pc_audio_'))]
-    print(audio_cols)
     embedding_cols = text_cols + audio_cols    
     
+    # Check available modalities
+    use_text = len(text_cols) > 0
+    use_audio = len(audio_cols) > 0
+    
+    if not (use_text or use_audio):
+        raise ValueError("At least one modality (text or audio) must be enabled.")
+
     # Prepare features and target
     X_train = df_train.drop(columns=["fmri_value"])
-    y_train = df_train["fmri_value"]  # Keep as pandas Series like in working code
+    y_train = df_train["fmri_value"]
 
-    valid_idx = y_train != 0 ## exclude background values
+    valid_idx = y_train != 0  # Exclude background values
     X_filtered = X_train[valid_idx]
     y_filtered = y_train[valid_idx]
     
     print(f"Filtered data contains {len(X_filtered)} valid entries.")
 
     if step == 1:  # Base features comparison with fixed alpha
-        # Create two different feature sets
+        # Create feature sets
         X_with_base = X_filtered
-        X_without_base = X_filtered[embedding_cols]  # Only keep embedding columns
+        X_without_base = X_filtered[embedding_cols] if embedding_cols else X_filtered  # Fallback if no embeddings
         
-        # Define pipelines for both configurations without PCA
+        # Define pipelines
         pipeline_with_base = Pipeline([
             ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
@@ -122,7 +127,7 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
             ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
         
-        # Fit both pipelines
+        # Fit pipelines
         pipeline_with_base.fit(X_with_base, y_filtered)
         pipeline_without_base.fit(X_without_base, y_filtered)
         
@@ -136,69 +141,61 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
         }
     
     elif step == 2:  # PCA threshold optimization
-        # Determine whether to use base features based on previous results
+        # Determine whether to use base features
         if use_best_base:
-            # Load previous results to determine best configuration
             prev_results_path = os.path.join(paths["results_path"], "step1_results.csv")
             prev_results = pd.read_csv(prev_results_path)
             use_base = prev_results['with_base_score'].mean() > prev_results['without_base_score'].mean()
         else:
-            use_base = True  # Default to using base features
+            use_base = True
         
         # Select appropriate feature set
-        X = X_filtered if use_base else X_filtered[embedding_cols]
+        X = X_filtered if use_base else X_filtered[embedding_cols] if embedding_cols else X_filtered
         
-        # Optimize PCA computation by pre-filtering the columns
-        text_features = X[text_cols]
-        audio_features = X[audio_cols]
-        other_features = X.drop(columns=text_cols + audio_cols)
+        # Optimize PCA computation
+        text_features = X[text_cols] if use_text else None
+        audio_features = X[audio_cols] if use_audio else None
+        other_features = X.drop(columns=(text_cols + audio_cols) if (use_text or use_audio) else [], errors='ignore')
         
-        # Pre-compute base PCA with maximum threshold to avoid recomputing for each threshold
-        print("Pre-computing PCA components...")
-        max_threshold = max(pca_thresholds)
-        text_pca = PCA(n_components=max_threshold)
-        audio_pca = PCA(n_components=max_threshold)
-        
-        # Fit PCAs once
-        text_transformed_full = text_pca.fit_transform(text_features)
-        audio_transformed_full = audio_pca.fit_transform(audio_features)
-        
-        print(f"Text PCA: {text_transformed_full.shape[1]} components explain {max_threshold*100:.1f}% variance")
-        print(f"Audio PCA: {audio_transformed_full.shape[1]} components explain {max_threshold*100:.1f}% variance")
-        
-        # Get explained variance ratios
-        text_exp_var = text_pca.explained_variance_ratio_.cumsum()
-        audio_exp_var = audio_pca.explained_variance_ratio_.cumsum()
-        
-        # Create simplified custom transformer that just selects components
+        # Modified OptimizedPCA class
         class OptimizedPCA:
             def __init__(self, n_components=0.5):
                 self.n_components = n_components
                 self.text_components = None
                 self.audio_components = None
+                self.text_pca = None
+                self.audio_pca = None
                 
             def fit(self, X, y=None):
-                # Determine number of components to use based on threshold
-                self.text_components = np.sum(text_exp_var <= self.n_components) + 1
-                self.audio_components = np.sum(audio_exp_var <= self.n_components) + 1
-                self.text_components = min(self.text_components, text_transformed_full.shape[1])
-                self.audio_components = min(self.audio_components, audio_transformed_full.shape[1])
+                if use_text:
+                    self.text_pca = PCA(n_components=self.n_components)
+                    text_features_subset = X[text_cols]
+                    self.text_pca.fit(text_features_subset)
+                    text_exp_var = self.text_pca.explained_variance_ratio_.cumsum()
+                    self.text_components = np.sum(text_exp_var <= self.n_components) + 1
+                    self.text_components = min(self.text_components, text_features_subset.shape[1])
+                if use_audio:
+                    self.audio_pca = PCA(n_components=self.n_components)
+                    audio_features_subset = X[audio_cols]
+                    self.audio_pca.fit(audio_features_subset)
+                    audio_exp_var = self.audio_pca.explained_variance_ratio_.cumsum()
+                    self.audio_components = np.sum(audio_exp_var <= self.n_components) + 1
+                    self.audio_components = min(self.audio_components, audio_features_subset.shape[1])
                 return self
                 
             def transform(self, X):
-                # For cross-validation, we need to apply the fitted PCA to the current subset
-                # Get the current subset of features
-                text_features_subset = X[text_cols]
-                audio_features_subset = X[audio_cols]
-                other_feat_subset = X.drop(columns=text_cols + audio_cols)
-                
-                # Apply the pre-fitted PCA transformations but only keep the number of components we determined
-                text_transformed_subset = text_pca.transform(text_features_subset)[:, :self.text_components]
-                audio_transformed_subset = audio_pca.transform(audio_features_subset)[:, :self.audio_components]
-                
-                # Combine the transformed features with the other features
-                result = np.hstack([text_transformed_subset, audio_transformed_subset, other_feat_subset])
-                return result
+                result = []
+                if use_text:
+                    text_features_subset = X[text_cols]
+                    text_transformed = self.text_pca.transform(text_features_subset)[:, :self.text_components]
+                    result.append(text_transformed)
+                if use_audio:
+                    audio_features_subset = X[audio_cols]
+                    audio_transformed = self.audio_pca.transform(audio_features_subset)[:, :self.audio_components]
+                    result.append(audio_transformed)
+                other_features_subset = X.drop(columns=(text_cols + audio_cols) if (use_text or use_audio) else [], errors='ignore')
+                result.append(other_features_subset.values)
+                return np.hstack(result) if result else other_features_subset.values
                 
             def get_params(self, deep=True):
                 return {"n_components": self.n_components}
@@ -212,7 +209,6 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
             ('ridge', Ridge(alpha=fixed_alpha, random_state=random_seed))
         ])
         
-        # Now we only need to search over one parameter
         param_grid = {
             'preprocessor__n_components': pca_thresholds
         }
@@ -222,13 +218,12 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
         
         best_threshold = grid_search.best_params_['preprocessor__n_components']
         return {
-            'best_pca_text': best_threshold,
-            'best_pca_audio': best_threshold,
+            'best_pca_text': best_threshold if use_text else None,
+            'best_pca_audio': best_threshold if use_audio else None,
             'score': grid_search.best_score_
         }
     
-    else:  # step 3: Alpha optimization
-        # Determine whether to use base features and best PCA threshold
+    else:  # Step 3: Alpha optimization
         if use_best_base:
             prev_results_path = os.path.join(paths["results_path"], "step1_results.csv")
             prev_results = pd.read_csv(prev_results_path)
@@ -236,9 +231,8 @@ def cv(df_train, voxel, alpha_values, pca_thresholds, step, fixed_alpha=None, us
         else:
             use_base = True
                
-        # Select appropriate feature set
-        X = X_filtered if use_base else X_filtered[embedding_cols]        
-        # Define pipeline without PCA (since it's already done in the dataset)
+        X = X_filtered if use_base else X_filtered[embedding_cols] if embedding_cols else X_filtered
+        
         pipeline = Pipeline([
             ('ridge', Ridge(random_state=random_seed))
         ])
@@ -297,13 +291,13 @@ def main():
     
     # Load dataset once
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = participant_list[:10]
+    participant_list = participant_list[:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     # Get top voxels
     top_voxels_path = os.path.join(paths["results_path"], "top10_voxels.csv")
     top_voxels = analysis_helpers.get_top_voxels(database_train, tuple(img_size), voxel_list, top_voxels_path)
-    #top_voxels = top_voxels[:100]
+    top_voxels = top_voxels[:100]
     print(f"\nUsing {len(top_voxels)} top voxels for analysis.")
     
     # Configure parallel processing

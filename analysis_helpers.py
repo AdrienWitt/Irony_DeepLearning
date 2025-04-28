@@ -9,11 +9,12 @@ def get_paths():
 
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri", "weighted"),
+        "fmri_data_path": os.path.join(base_path, "data", "fmri", "group_masked_unormalized"),
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "embeddings_audio_opensmile_path": os.path.join(base_path, "embeddings", "audio_opensmile"),
-        "results_path": os.path.join(base_path, "results_test"),
+        "results_path": os.path.join(base_path, "results"),
+        "group_mask_path": os.path.join(base_path, "data", "fmri", "group_masks", "group_mask", "group_mask_threshold_0.85.nii.gz")
     }
 
     os.makedirs(paths["results_path"], exist_ok=True)
