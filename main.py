@@ -11,18 +11,18 @@ import analysis_helpers
 from sklearn.metrics import r2_score
 import nibabel as nib
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-args = argparse.Namespace(
-    use_audio = False,
-    use_text = False,
-    use_base_features=True,
-    use_text_weighted = True,
-    use_audio_opensmile = True,
-    include_tasks = ["irony", "sarcasm"],
-    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
+# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+# args = argparse.Namespace(
+#     use_audio = False,
+#     use_text = False,
+#     use_base_features=True,
+#     use_text_weighted = True,
+#     use_audio_opensmile = True,
+#     include_tasks = ["irony", "sarcasm"],
+#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
 
 
-df_train = database_train.get_voxel_values(((50, 50, 50)))
+# df_train = database_train.get_voxel_values(((50, 50, 50)))
 
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
