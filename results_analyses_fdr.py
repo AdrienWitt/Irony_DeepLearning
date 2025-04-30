@@ -7,22 +7,19 @@ import os
 from statsmodels.stats.multitest import fdrcorrection
 
 # Load correlation maps
-r_audio = np.load("results_sarcasm_irony/correlation_map_mean_audio_base.npy")
-r_text = np.load("results_sarcasm_irony/correlation_map_mean_text_weighted_base.npy")
-r_text_audio = np.load("results_sarcasm_irony/correlation_map_mean_audio_text_weighted_base.npy")
+r_audio = np.load("results_mc/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
+r_text = np.load("results_mc/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
+r_text_audio = np.load("results_mc/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
+brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.85.nii.gz")
 
-# Compute mean affine
-data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"
-all_affines = []
-for subject in os.listdir(data_folder):
-    subject_path = os.path.join(data_folder, subject)
-    for file in os.listdir(subject_path):
-        if file.endswith('.nii') or file.endswith('.nii.gz'):
-            file_path = os.path.join(subject_path, file)
-            nifti_img = nib.load(file_path)
-            all_affines.append(nifti_img.affine)
+affine = brain_mask.affine
 
-affine = np.mean(all_affines, axis=0)
+
+# Create NIfTI images
+r_audio_nifti = nib.Nifti1Image(r_audio, affine)
+r_text_nifti = nib.Nifti1Image(r_text, affine)
+r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
+brain_mask = brain_mask.get_fdata() > 0
 
 # Create NIfTI images
 r_audio_nifti = nib.Nifti1Image(r_audio, affine)

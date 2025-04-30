@@ -9,15 +9,25 @@ def get_paths():
 
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
-        "fmri_data_path": os.path.join(base_path, "data", "fmri", "group_masked_mc"),
+        "fmri_data_path": {
+            "mc": os.path.join(base_path, "data", "fmri", "mc"),
+            "normalized": os.path.join(base_path, "data", "fmri", "normalized"),
+            "unormalized": os.path.join(base_path, "data", "fmri", "unormalized")
+        },
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "embeddings_audio_opensmile_path": os.path.join(base_path, "embeddings", "audio_opensmile"),
-        "results_path": os.path.join(base_path, "results_mc"),
+        "results_path": {
+            "mc": os.path.join(base_path, "results", "mc"),
+            "normalized": os.path.join(base_path, "results", "normalized"),
+            "unormalized": os.path.join(base_path, "results", "unormalized")
+        },
         "group_mask_path": os.path.join(base_path, "data", "fmri", "group_masks", "group_mask", "group_mask_threshold_0.85.nii.gz")
     }
 
-    os.makedirs(paths["results_path"], exist_ok=True)
+    # Create all results directories
+    for path in paths["results_path"].values():
+        os.makedirs(path, exist_ok=True)
     
     return paths
 
@@ -35,10 +45,9 @@ def get_unique_filename(base_path, filename):
 def load_dataset(args, paths, participant_list):
     """Loads the dataset using parsed arguments."""
 
-
     dataset_args = {
         "data_path": paths["data_path"],
-        "fmri_data_path": paths["fmri_data_path"],
+        "fmri_data_path": paths["fmri_data_path"][args.data_type],  # Select the correct path based on data type
         "embeddings_text_path": paths["embeddings_text_path"],
         "embeddings_audio_path": paths["embeddings_audio_path"],
         "embeddings_audio_opensmile_path": paths["embeddings_audio_opensmile_path"],

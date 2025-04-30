@@ -6,32 +6,18 @@ from scipy.ndimage import label
 import os
 
 # Load correlation maps
-r_audio = np.load("results/r2_map_mean_audio_base_iro_sar.npy")
-r_text = np.load("results/r2_map_mean_text_weighted_base_iro_sar.npy")
-r_text_audio = np.load("results/r2_map_mean_audio_text_weighted_base_iro_sar.npy")
-brain_mask = nib.load(r'C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_85.nii.gz')
+r_audio = np.load("results_mc/correlation_map_mean_audio_opensmile_base_iro_sar.npy")
+r_text = np.load("results_mc/correlation_map_mean_text_weighted_base_iro_sar.npy")
+r_text_audio = np.load("results_mc/correlation_map_mean_audio_opensmile_text_weighted_base_iro_sar.npy")
+brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.85.nii.gz")
 
-# Compute mean affine
-data_folder = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\weighted"
-all_affines = []
-for subject in os.listdir(data_folder):
-    subject_path = os.path.join(data_folder, subject)
-    for file in os.listdir(subject_path):
-        if file.endswith('.nii') or file.endswith('.nii.gz'):
-            file_path = os.path.join(subject_path, file)
-            nifti_img = nib.load(file_path)
-            all_affines.append(nifti_img.affine)
+# # Load correlation maps
+# r_audio = np.load("results_mc_full_embedd/correlation_map_mean_audio_base_sar_iro_pro_sem_tom.npy")
+# r_text = np.load("results_mc_full_embedd/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
+# r_text_audio = np.load("results_mc_full_embedd/correlation_map_mean_audio_text_weighted_base_sar_iro_pro_sem_tom.npy")
+# brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.85.nii.gz")
 
-affine = np.mean(all_affines, axis=0)
-#affine = all_affines[2]
-
-# Create NIfTI images
-r_audio_nifti = nib.Nifti1Image(r_audio, affine)
-r_text_nifti = nib.Nifti1Image(r_text, affine)
-r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
-
-# test = np.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\results_test\correlation_map_mean_text_weighted_base_iro.npy")
-# test_nifti = nib.Nifti1Image(test, affine)
+affine = brain_mask.affine
 
 
 # Plot glass brain (all significant clusters)
@@ -47,11 +33,13 @@ plotting.plot_glass_brain(
 )
 plt.tight_layout()
 
-# Load and resample MNI152 brain mask
-mni_brain_mask = datasets.load_mni152_brain_mask(resolution=2)
-mni_template = datasets.load_mni152_template(resolution=2)
-mni_brain_mask_resampled = image.resample_to_img(mni_brain_mask, r_audio_nifti, interpolation='nearest')
-brain_mask = mni_brain_mask_resampled.get_fdata() > 0
+
+# Create NIfTI images
+r_audio_nifti = nib.Nifti1Image(r_audio, affine)
+r_text_nifti = nib.Nifti1Image(r_text, affine)
+r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
+brain_mask = brain_mask.get_fdata() > 0
+
 
 # Smooth and apply brain mask
 fwhm = 6.0
@@ -69,10 +57,6 @@ X, Y, Z = r_audio.shape
 
 # Step 2: Compute observed improvement
 delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
-
-delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
-
-
 
 # Step 3: Flatten only brain voxels
 brain_mask_flat = brain_mask.ravel()
@@ -146,7 +130,7 @@ significance_nifti = nib.Nifti1Image(significance_map_3d, affine)
 
 # Save NIfTI for positive clusters only
 significance_positive_nifti = nib.Nifti1Image(significance_map_positive_3d, affine)
-#nib.save(significance_positive_nifti, 'results/significant_improvements_cluster_corrected_positive.nii')
+nib.save(significance_positive_nifti, 'results_mc/significant_improvements_cluster_corrected_positive_irosar.nii')
 
 # Plot glass brain (all significant clusters)
 fig, ax = plt.subplots(1, 1, figsize=(10, 6))
@@ -160,79 +144,5 @@ plotting.plot_glass_brain(
     axes=ax
 )
 plt.tight_layout()
-#plt.savefig('results/significant_improvements_glass_brain_all.png', dpi=300)
+plt.savefig('results_mc/significant_improvements_glass_brain_irosar.png', dpi=300)
 
-# Plot stat map (all significant clusters)
-min_delta = np.min(np.abs(significance_map_3d[significance_map_3d != 0])) if np.any(significance_map_3d != 0) else 0
-plotting.plot_stat_map(
-    significance_nifti,
-    bg_img=mni_template,
-    threshold=min_delta,
-    title='Significant Delta R² (Text+Audio vs Max(Text, Audio))\nCluster-corrected p < 0.05',
-    colorbar=True,
-    cmap='RdBu_r',
-    vmax=np.max(np.abs(significance_map_3d)) * 1.1 if np.any(significance_map_3d != 0) else 0.1,
-    display_mode='ortho',
-    cut_coords=(0, 0, 0)
-)
-plt.savefig('results/significant_delta_r_stat_map_all_2mm.png', dpi=300)
-plt.close()
-
-# Plot glass brain (positive clusters only)
-fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-plotting.plot_glass_brain(
-    significance_positive_nifti,
-    threshold=0,
-    title='Significant Positive Delta R² (Text+Audio > Max(Text,Audio))\nFWER-corrected p < 0.05',
-    colorbar=True,
-    plot_abs=False,
-    display_mode='ortho',
-    axes=ax
-)
-plt.tight_layout()
-plt.savefig('results/significant_improvements_glass_brain_positive.png', dpi=300)
-plt.close()
-
-# Plot stat map (positive clusters only)
-min_delta_pos = np.min(significance_map_positive_3d[significance_map_positive_3d > 0]) if np.any(significance_map_positive_3d > 0) else 0
-plotting.plot_stat_map(
-    significance_positive_nifti,
-    bg_img=mni_template,
-    threshold=min_delta_pos,
-    title='Significant Positive Delta R² (Text+Audio > Max(Text, Audio))\nCluster-corrected p < 0.05',
-    colorbar=True,
-    cmap='RdBu_r',
-    vmax=np.max(significance_map_positive_3d) * 1.1 if np.any(significance_map_positive_3d > 0) else 0.1,
-    display_mode='ortho',
-    cut_coords=(0, 0, 0)
-)
-plt.savefig('results/significant_delta_r_stat_map_positive_2mm.png', dpi=300)
-plt.close()
-
-# Plot histogram of delta_r_obs_flat
-plt.figure(figsize=(8, 5))
-plt.hist(delta_r_obs_flat, bins=100, color='steelblue', alpha=0.7)
-plt.xlabel('Delta R² (Text+Audio - Max(Text, Audio))')
-plt.ylabel('Voxel Count')
-plt.title('Distribution of ΔR² within Brain Mask')
-plt.grid(True)
-plt.tight_layout()
-plt.savefig('results/delta_r_histogram_all_voxels.png')
-plt.close()
-
-# Diagnostic: Proportion of positive voxels
-print(f"Proportion of voxels with delta_r_obs_3d > 0: {np.sum(delta_r_obs_3d[brain_mask] > 0) / np.sum(brain_mask):.2%}")
-
-# Diagnostic: Unthresholded delta_r_obs_3d
-delta_r_nifti = nib.Nifti1Image(delta_r_obs_3d, affine)
-plotting.plot_stat_map(
-    delta_r_nifti,
-    bg_img=mni_template,
-    title='Unthresholded Delta R² (Text+Audio - Max(Text, Audio))',
-    colorbar=True,
-    cmap='RdBu_r',
-    display_mode='ortho',
-    cut_coords=(0, 0, 0)
-)
-plt.savefig('results/unthresholded_delta_r_stat_map.png', dpi=300)
-plt.close()

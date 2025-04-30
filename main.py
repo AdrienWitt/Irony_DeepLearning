@@ -13,13 +13,13 @@ import nibabel as nib
 
 # os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 # args = argparse.Namespace(
-#     use_audio = False,
+#     use_audio = True,
 #     use_text = False,
 #     use_base_features=True,
 #     use_text_weighted = True,
-#     use_audio_opensmile = True,
+#     use_audio_opensmile = False,
 #     include_tasks = ["irony", "sarcasm"],
-#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False)
+#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False, data_type = 'unormalized')
 
 # df_train = database_train.get_voxel_values(((50, 50, 50)))
 
@@ -49,6 +49,8 @@ def parse_arguments():
                             help="Explained variance threshold for PCA (default: 0.60).")
     dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
                             help="List of tasks to include (default: all available tasks).")
+    dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unnormalized"], default="unnormalized",
+                            help="Type of fMRI data to use: mc (mean-centered), normalized, or unnormalized (default: unnormalized).")
     
 
     # **Analysis-related arguments**
@@ -60,7 +62,7 @@ def parse_arguments():
 
     return parser.parse_args()
 
-def voxel_analysis(voxel, df_train, alpha):
+def voxel_analysis(voxel, df_train, alpha, data_type):
     """Train Ridge regression and compute correlation for a given voxel using 5-fold CV."""
     random_seed = int(voxel[0] * 10000 + voxel[1] * 100 + voxel[2])
             # Extract features, target, and mask
@@ -78,10 +80,13 @@ def voxel_analysis(voxel, df_train, alpha):
         print(f"No enough data for voxel {voxel} after filtering")
         return voxel, [0] * 5, 0, [0] * 5, 0  # Return zeros for correlations and R^2
     
-    # Normalize y_filtered (z-score non-zero values)
-    if np.std(y_filtered) > 0:
+    # Normalize y_filtered based on data type
+    if data_type == "unnormalized" and np.std(y_filtered) > 0:
         y_filtered = (y_filtered - np.mean(y_filtered)) / np.std(y_filtered)
-    else:
+    elif data_type == "mc" and np.std(y_filtered) > 0:
+        # For mean-centered data, we only need to divide by standard deviation
+        y_filtered = y_filtered / np.std(y_filtered)
+    elif (data_type == "unnormalized" or data_type == "mc") and np.std(y_filtered) == 0:
         print(f"Skipping voxel {voxel}: y_filtered has zero variance after filtering")
         return voxel, [0] * 5, 0, [0] * 5, 0
     
@@ -123,16 +128,17 @@ def voxel_analysis(voxel, df_train, alpha):
     return voxel, cv_scores, mean_correlation, r2_scores, mean_r2
 
 
-def process_voxel(voxel, df_train, alpha):
-    return voxel_analysis(voxel, df_train, alpha)
+def process_voxel(voxel, df_train, alpha, data_type):
+    return voxel_analysis(voxel, df_train, alpha, data_type)
 
 def adjust_alpha(database_train, args):
     df = database_train.data.drop(columns=["fmri_value"])
     if args.use_audio and args.use_text_weighted:
         alpha = args.alpha
-    else: 
-        alpha = args.alpha * df.shape[1] / 73 ## 79 is the total number of features with PCA 0.50 threshold for text and audio
+    elif args.use_audio_opensmile: 
+        alpha = args.alpha * df.shape[1] / 83 #73 
         print(f"- Use correced alpha: {alpha}")
+    
     return alpha
     
 
@@ -152,23 +158,21 @@ def main():
           f"- PCA threshold: {args.pca_threshold}\n"
           f"- Ridge alpha: {args.alpha}\n"
           f"- Number of parallel jobs: {args.num_jobs}\n"
+          f"- Data type: {args.data_type}\n"
           f"- Included tasks: {', '.join(args.include_tasks)}")
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = os.listdir(paths["data_path"])[0:10]
+    participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
-    
-     # Load group mask
-    group_mask_nifti = nib.load(paths["group_mask_path"])
-    group_mask = group_mask_nifti.get_fdata() > 0
-    
+        
     # Generate voxel list dynamically
     img_size = (79, 95, 79)
-    voxel_list = [(i, j, k) for i, j, k in np.ndindex(img_size) if group_mask[i, j, k]]
-    #voxel_list = voxel_list[0:100]
+    
+    voxel_list = list(np.ndindex(img_size))
+    voxel_list = voxel_list[0:100]
 
     # Initialize correlation and R^2 maps
     correlation_map_mean = np.zeros(img_size)
@@ -185,7 +189,7 @@ def main():
 
     try:
         results = Parallel(n_jobs=n_jobs, backend=backend, verbose=1)(
-            delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), alpha) 
+            delayed(process_voxel)(voxel, database_train.get_voxel_values(voxel), alpha, args.data_type) 
             for voxel in voxel_list
         )
     except Exception as e:
@@ -195,7 +199,7 @@ def main():
         results = []
         for voxel in voxel_list:
             try:
-                result = process_voxel(voxel, database_train.get_voxel_values(voxel), args.alpha)
+                result = process_voxel(voxel, database_train.get_voxel_values(voxel), alpha, args.data_type)
                 results.append(result)
             except Exception as e:
                 print(f"Error processing voxel {voxel}: {str(e)}")
@@ -211,11 +215,6 @@ def main():
         r2_map_folds[voxel] = r2_scores
         correlations.append(mean_corr)
         r2_values.append(mean_r2)
-
-    correlation_map_mean = correlation_map_mean * group_mask
-    correlation_map_folds = correlation_map_folds * group_mask[..., np.newaxis]
-    r2_map_mean = r2_map_mean * group_mask
-    r2_map_folds = r2_map_folds * group_mask[..., np.newaxis]
 
     # Compute and print correlation statistics
     mean_correlation = np.mean(correlations)
@@ -241,13 +240,12 @@ def main():
     
     # Create task code string (first 3 letters of each task)
     task_code = "_".join([task[:3] for task in args.include_tasks])
-    
         
     # Save maps
-    result_file_mean = os.path.join(paths["results_path"], f"correlation_map_mean_{feature_str}_{task_code}.npy")
-    result_file_folds = os.path.join(paths["results_path"], f"correlation_map_folds_{feature_str}_{task_code}.npy")
-    r2_file_mean = os.path.join(paths["results_path"], f"r2_map_mean_{feature_str}_{task_code}.npy")
-    r2_file_folds = os.path.join(paths["results_path"], f"r2_map_folds_{feature_str}_{task_code}.npy")
+    result_file_mean = os.path.join(paths["results_path"][args.data_type], f"correlation_map_mean_{feature_str}_{task_code}.npy")
+    result_file_folds = os.path.join(paths["results_path"][args.data_type], f"correlation_map_folds_{feature_str}_{task_code}.npy")
+    r2_file_mean = os.path.join(paths["results_path"][args.data_type], f"r2_map_mean_{feature_str}_{task_code}.npy")
+    r2_file_folds = os.path.join(paths["results_path"][args.data_type], f"r2_map_folds_{feature_str}_{task_code}.npy")
     
     np.save(result_file_mean, correlation_map_mean)
     np.save(result_file_folds, correlation_map_folds)

@@ -19,7 +19,7 @@ from nilearn.glm.first_level import compute_regressor
 folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
 files_type = ['swrMF']
-output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masked_unormalized'
+output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\unormalized'
 if not os.path.exists(output_dir_fmri):
     os.makedirs(output_dir_fmri)
 output_dir_mask = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks'
@@ -57,14 +57,23 @@ def load_dataframe(participant_path):
 
 def crop_skull_background(fmri, participant, run_number, output_dir, group_mask=None):
     if group_mask is not None:
-        # Resample group mask to match fMRI data
+        # Use provided group mask
         mask = group_mask
         mask_filename = None
     else:
-        # Generate and save individual mask
-        mask = compute_epi_mask(fmri)
-        mask_filename = os.path.join(output_dir, f"{participant}_{run_number}_mask.nii.gz")
-        nib.save(mask, mask_filename)
+        # Check for existing individual mask in output_dir_mask/{participant}/
+        mask_dir = os.path.join(output_dir_mask, participant)
+        if not os.path.exists(mask_dir):
+            os.makedirs(mask_dir)
+        mask_filename = os.path.join(mask_dir, f"{participant}_{run_number}_mask.nii.gz")
+        if os.path.exists(mask_filename):
+            print(f"Loading existing individual mask for {participant}_{run_number}: {mask_filename}")
+            mask = nib.load(mask_filename)
+        else:
+            # Generate and save new individual mask
+            print(f"Generating new individual mask for {participant}_{run_number}")
+            mask = compute_epi_mask(fmri)
+            nib.save(mask, mask_filename)
     
     print(f"Mask shape for {participant}_{run_number}: {mask.shape}")
     masked_list = []
@@ -113,7 +122,7 @@ def compute_group_mask_inter(mask_files, output_dir):
     print(f"Group mask saved to {group_mask_filename}")
     return group_mask_filename
 
-def compute_group_mask_threshold(mask_files, output_dir, threshold=0.85):
+def compute_group_mask_threshold(mask_files, output_dir, threshold=0.10):
     if not mask_files:
         raise ValueError("No mask files found to compute group mask.")
     # Load masks
@@ -168,12 +177,13 @@ for file_type in files_type:
             subj_dir = os.path.join(output_dir_fmri, participant)
             if not os.path.exists(subj_dir):
                 os.makedirs(subj_dir)
-            cropped_img, mask_filename = crop_skull_background(concatenated_img, participant, run_number, subj_dir, group_mask=group_mask)
+            cropped_img, mask_filename = crop_skull_background(concatenated_img, participant, run_number, subj_dir)
             fmri = cropped_img.get_fdata()
             affine = cropped_img.affine
             header = cropped_img.header
             #fmri_normalized = mean_center(fmri)
             fmri_normalized = fmri
+            #fmri_normalized = mean_z_norm(fmri)
 
             # Get corresponding dataframe
             df = dfs[run_number]
