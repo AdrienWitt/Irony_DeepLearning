@@ -76,7 +76,7 @@ def voxel_analysis(voxel, df_train, alpha, data_type):
     print("X_filtered length: ", len(X_filtered))
     
     # Exclude background
-    if len(X_filtered) < len(X)*0.5:
+    if len(X_filtered) < len(X)*0.25:
         print(f"No enough data for voxel {voxel} after filtering")
         return voxel, [0] * 5, 0, [0] * 5, 0  # Return zeros for correlations and R^2
     
