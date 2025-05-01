@@ -16,7 +16,7 @@ import nibabel as nib
 #     use_audio = True,
 #     use_text = False,
 #     use_base_features=True,
-#     use_text_weighted = True,
+#     use_text_weighted = False,
 #     use_audio_opensmile = False,
 #     include_tasks = ["irony", "sarcasm"],
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False, data_type = 'unormalized')
@@ -133,11 +133,25 @@ def process_voxel(voxel, df_train, alpha, data_type):
 
 def adjust_alpha(database_train, args):
     df = database_train.data.drop(columns=["fmri_value"])
-    if args.use_audio and args.use_text_weighted:
-        alpha = args.alpha
-    elif args.use_audio_opensmile: 
-        alpha = args.alpha * df.shape[1] / 83 #73 
-        print(f"- Use correced alpha: {alpha}")
+    alpha = args.alpha  # Initialize with default alpha
+    
+    # Calculate feature dimensions
+    n_features = df.shape[1]
+    
+    # Case 1: Text and audio features together - keep original alpha
+    if args.use_text and (args.use_audio or args.use_audio_opensmile):
+        pass  # Keep original alpha
+    
+    # Case 2: Individual features - adjust alpha
+    elif args.use_text_weighted:
+        alpha = args.alpha * n_features / 83  # Adjust for text weighted features
+        print(f"- Using corrected alpha for text_weighted: {alpha}")
+    elif args.use_audio:
+        alpha = args.alpha * n_features / 83  # Adjust for audio features
+        print(f"- Using corrected alpha for audio: {alpha}")
+    elif args.use_audio_opensmile:
+        alpha = args.alpha * n_features / 83  # Adjust for opensmile features
+        print(f"- Using corrected alpha for opensmile: {alpha}")
     
     return alpha
     
@@ -163,7 +177,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    participant_list = os.listdir(paths["data_path"])[0:10]
+    #participant_list = os.listdir(paths["data_path"])[0:10]
     database_train = analysis_helpers.load_dataset(args, paths, participant_list)
     
     alpha = adjust_alpha(database_train, args)
