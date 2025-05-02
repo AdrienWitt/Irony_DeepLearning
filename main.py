@@ -49,7 +49,7 @@ def parse_arguments():
                             help="Explained variance threshold for PCA (default: 0.60).")
     dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
                             help="List of tasks to include (default: all available tasks).")
-    dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unnormalized"], default="unnormalized",
+    dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unormalized"], default="unormalized",
                             help="Type of fMRI data to use: mc (mean-centered), normalized, or unnormalized (default: unnormalized).")
     
 
@@ -186,7 +186,7 @@ def main():
     img_size = (79, 95, 79)
     
     voxel_list = list(np.ndindex(img_size))
-    voxel_list = voxel_list[0:100]
+    #voxel_list = voxel_list[0:100]
 
     # Initialize correlation and R^2 maps
     correlation_map_mean = np.zeros(img_size)
