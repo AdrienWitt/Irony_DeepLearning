@@ -12,7 +12,8 @@ def get_paths():
         "fmri_data_path": {
             "mc": os.path.join(base_path, "data", "fmri", "mc"),
             "normalized": os.path.join(base_path, "data", "fmri", "normalized"),
-            "unormalized": os.path.join(base_path, "data", "fmri", "unormalized")
+            "unormalized": os.path.join(base_path, "data", "fmri", "unormalized"),
+            "normalized_time": os.path.join(base_path, "data", "fmri", "normalized_time")
         },
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
@@ -20,7 +21,8 @@ def get_paths():
         "results_path": {
             "mc": os.path.join(base_path, "results", "mc"),
             "normalized": os.path.join(base_path, "results", "normalized"),
-            "unormalized": os.path.join(base_path, "results", "unormalized")
+            "unormalized": os.path.join(base_path, "results", "unormalized"),
+            "normalized_time": os.path.join(base_path, "results", "normalized_time")
         },
         "group_mask_path": os.path.join(base_path, "data", "fmri", "group_masks", "group_mask", "group_mask_threshold_0.85.nii.gz")
     }

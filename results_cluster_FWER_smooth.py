@@ -6,39 +6,37 @@ from scipy.ndimage import label
 import os
 from scipy.ndimage import gaussian_filter
 
-# Load correlation maps
+# # # Load correlation maps
+# r_audio = np.load("results/mc/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
+# r_text = np.load("results/mc/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
+# r_text_audio = np.load("results/mc/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
+
+# # Load correlation maps
 r_audio = np.load("results/normalized/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
 r_text = np.load("results/normalized/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
 r_text_audio = np.load("results/normalized/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
+
+
+############################################################################################
+# Load mask and affine
 brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.25.nii.gz")
-
-# # Load correlation maps
-# r_audio = np.load("results/unormalized/correlation_map_mean_audio_opensmile_base_iro_sar.npy")
-# r_text = np.load("results/unormalized/correlation_map_mean_text_weighted_base_iro_sar.npy")
-# r_text_audio = np.load("results/unormalized/correlation_map_mean_audio_opensmile_text_weighted_base_iro_sar.npy")
-# brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0..nii.gz")
-
-
-# # Load correlation maps
-# r_audio = np.load("results_mc_full_embedd/correlation_map_mean_audio_base_sar_iro_pro_sem_tom.npy")
-# r_text = np.load("results_mc_full_embedd/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
-# r_text_audio = np.load("results_mc_full_embedd/correlation_map_mean_audio_text_weighted_base_sar_iro_pro_sem_tom.npy")
-# brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.85.nii.gz")
-
 affine = brain_mask.affine
-
-# Create NIfTI images
-r_audio_nifti = nib.Nifti1Image(r_audio, affine)
-r_text_nifti = nib.Nifti1Image(r_text, affine)
-r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
+voxel_sizes = brain_mask.header.get_zooms()[:3]
 brain_mask = brain_mask.get_fdata() > 0
-
-
-# Smooth and apply brain mask
+# Define smoothing
 fwhm = 6.0
-r_audio = image.smooth_img(r_audio_nifti, fwhm=fwhm).get_fdata() * brain_mask
-r_text = image.smooth_img(r_text_nifti, fwhm=fwhm).get_fdata() * brain_mask
-r_text_audio = image.smooth_img(r_text_audio_nifti, fwhm=fwhm).get_fdata() * brain_mask
+sigma_mm = fwhm / np.sqrt(8 * np.log(2))
+sigma_vox = [sigma_mm / vs for vs in voxel_sizes]
+def smooth_within_mask(data, mask, sigma_vox):
+    data_masked = np.zeros_like(data)
+    data_masked[mask] = data[mask]
+    smoothed = gaussian_filter(data_masked, sigma=sigma_vox)
+    smoothed[~mask] = 0
+    return smoothed
+# Apply mask-aware smoothing
+r_audio = smooth_within_mask(r_audio, brain_mask, sigma_vox)
+r_text = smooth_within_mask(r_text, brain_mask, sigma_vox)
+r_text_audio = smooth_within_mask(r_text_audio, brain_mask, sigma_vox)
 
 
 # Check zeros within brain
@@ -50,7 +48,11 @@ print(f"Zero voxels in r_text_audio (within brain): {np.sum(r_text_audio[brain_m
 X, Y, Z = r_audio.shape
 
 # Step 2: Compute observed improvement
-delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
+#delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
+
+#delta_r_obs_3d = r_audio - np.maximum(r_text_audio, r_text)
+
+delta_r_obs_3d = r_text - np.maximum(r_text_audio, r_audio)
 
 # Step 3: Flatten only brain voxels
 brain_mask_flat = brain_mask.ravel()
@@ -120,16 +122,15 @@ else:
 
 # Save NIfTI for all significant clusters
 significance_nifti = nib.Nifti1Image(significance_map_3d, affine)
-#nib.save(significance_nifti, 'results/significant_improvements_cluster_corrected_all.nii')
 
 # Save NIfTI for positive clusters only
 significance_positive_nifti = nib.Nifti1Image(significance_map_positive_3d, affine)
-nib.save(significance_positive_nifti, 'results/final_results/results_iro_sar_unormalized_opensmile_p01.nii')
+nib.save(significance_positive_nifti, 'results/final_results/results_sar_iro_pro_sem_tom_mc_opensmile_smooth.nii')
 
 # Plot glass brain (all significant clusters)
 fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 plotting.plot_glass_brain(
-    significance_nifti,
+    significance_positive_nifti,
     threshold=0,
     title='Significant Delta R² (Text+Audio vs Max(Text,Audio))\nFWER-corrected p < 0.05',
     colorbar=True,
@@ -138,6 +139,5 @@ plotting.plot_glass_brain(
     axes=ax
 )
 plt.tight_layout()
-plt.savefig('results/final_results/plot_iro_sar_unormalized_opensmile_p01.png', dpi=300)
-
+plt.savefig('results/final_results/plot_sar_iro_pro_sem_tom_mc_opensmile_smooth.png', dpi=300)
 

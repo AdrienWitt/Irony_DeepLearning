@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr 23 10:41:07 2025
-
-@author: wittmann
-"""
-
 import os
 import glob
 import numpy as np
@@ -19,7 +12,7 @@ from nilearn.glm.first_level import compute_regressor
 folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
 files_type = ['swrMF']
-output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\unormalized'
+output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normt'
 if not os.path.exists(output_dir_fmri):
     os.makedirs(output_dir_fmri)
 output_dir_mask = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks'
@@ -110,6 +103,45 @@ def mean_center(fmri):
     fmri_temp[nonzero_mask] -= global_mean
     return fmri_temp
 
+def mean_z_norm_time(fmri):
+    # Create a mask for non-zero voxels across all time points
+    nonzero_mask = np.any(fmri != 0, axis=3)  # Shape: (x, y, z)
+    if not np.any(nonzero_mask):
+        print("Warning: No nonzero voxels found!")
+        return fmri
+    # Extract non-zero voxel time series
+    nonzero_voxels = fmri[nonzero_mask, :]  # Shape: (n_nonzero_voxels, time)
+    # Compute mean and std along time axis (axis=1 in nonzero_voxels)
+    voxel_means = np.mean(nonzero_voxels, axis=1, keepdims=True)  # Shape: (n_nonzero_voxels, 1)
+    voxel_stds = np.std(nonzero_voxels, axis=1, keepdims=True)   # Shape: (n_nonzero_voxels, 1)
+    # Avoid division by zero
+    voxel_stds = np.where(voxel_stds == 0, 1, voxel_stds)
+    # Initialize output array
+    fmri_temp = fmri.copy()
+    # Compute z-scores for non-zero voxels
+    fmri_temp[nonzero_mask, :] = (nonzero_voxels - voxel_means) / voxel_stds
+    print(f"Mean range across non-zero voxels: {np.min(voxel_means):.4f} to {np.max(voxel_means):.4f}")
+    print(f"Std range across non-zero voxels: {np.min(voxel_stds):.4f} to {np.max(voxel_stds):.4f}")
+    return fmri_temp
+
+def mean_center_time(fmri):
+    # Create a mask for non-zero voxels across all time points
+    nonzero_mask = np.any(fmri != 0, axis=3)  # Shape: (x, y, z)   
+    if not np.any(nonzero_mask):
+        print("Warning: No nonzero voxels found!")
+        return fmri
+    # Extract non-zero voxel time series
+    nonzero_voxels = fmri[nonzero_mask, :]  # Shape: (n_nonzero_voxels, time)
+    # Compute mean along time axis (axis=1 in nonzero_voxels)
+    voxel_means = np.mean(nonzero_voxels, axis=1, keepdims=True)  # Shape: (n_nonzero_voxels, 1)
+    # Initialize output array
+    fmri_temp = fmri.copy()
+    # Subtract mean for non-zero voxels
+    fmri_temp[nonzero_mask, :] = nonzero_voxels - voxel_means
+    print(f"Mean range across non-zero voxels: {np.min(voxel_means):.4f} to {np.max(voxel_means):.4f}")
+    return fmri_temp
+
+
 def compute_group_mask_inter(mask_files, output_dir):
     if not mask_files:
         raise ValueError("No mask files found to compute group mask.")
@@ -122,7 +154,7 @@ def compute_group_mask_inter(mask_files, output_dir):
     print(f"Group mask saved to {group_mask_filename}")
     return group_mask_filename
 
-def compute_group_mask_threshold(mask_files, output_dir, threshold=0.10):
+def compute_group_mask_threshold(mask_files, output_dir, threshold=0.25):
     if not mask_files:
         raise ValueError("No mask files found to compute group mask.")
     # Load masks
@@ -182,8 +214,9 @@ for file_type in files_type:
             affine = cropped_img.affine
             header = cropped_img.header
             #fmri_normalized = mean_center(fmri)
-            fmri_normalized = fmri
+            #fmri_normalized = fmri
             #fmri_normalized = mean_z_norm(fmri)
+            fmri_normalized = mean_z_norm_time(fmri)
 
             # Get corresponding dataframe
             df = dfs[run_number]

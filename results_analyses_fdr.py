@@ -7,13 +7,13 @@ import os
 from statsmodels.stats.multitest import fdrcorrection
 
 # Load correlation maps
-r_audio = np.load("results_mc/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
-r_text = np.load("results_mc/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
-r_text_audio = np.load("results_mc/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
-brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.85.nii.gz")
+r_audio = np.load("results/mc/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
+r_text = np.load("results/mc/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
+r_text_audio = np.load("results/mc/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
+brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.25.nii.gz")
+
 
 affine = brain_mask.affine
-
 
 # Create NIfTI images
 r_audio_nifti = nib.Nifti1Image(r_audio, affine)
@@ -21,16 +21,6 @@ r_text_nifti = nib.Nifti1Image(r_text, affine)
 r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
 brain_mask = brain_mask.get_fdata() > 0
 
-# Create NIfTI images
-r_audio_nifti = nib.Nifti1Image(r_audio, affine)
-r_text_nifti = nib.Nifti1Image(r_text, affine)
-r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
-
-# Load and resample MNI152 brain mask and template
-mni_brain_mask = datasets.load_mni152_brain_mask(resolution=2)
-mni_template = datasets.load_mni152_template(resolution=2)
-mni_brain_mask_resampled = image.resample_to_img(mni_brain_mask, r_audio_nifti, interpolation='nearest')
-brain_mask = mni_brain_mask_resampled.get_fdata() > 0
 
 # Smooth and apply brain mask
 fwhm = 6.0
@@ -77,11 +67,11 @@ _, p_values_fdr = fdrcorrection(p_values, alpha=0.05)
 # Step 7: Create significance map for FDR-corrected voxels (all)
 p_values_fdr_3d = np.zeros((X, Y, Z))
 p_values_fdr_3d[brain_mask] = p_values_fdr
-significant_fdr_mask_3d = p_values_fdr_3d < 0.05
+significant_fdr_mask_3d = (p_values_fdr_3d < 0.05) & brain_mask  # Explicitly mask with brain_mask
 significance_map_fdr_3d = np.zeros_like(delta_r_obs_3d)
 significance_map_fdr_3d[significant_fdr_mask_3d] = delta_r_obs_3d[significant_fdr_mask_3d]
 
-# Step 8: Create significance map for FDR-corrected voxels with positive delta (post-hoc)
+# Step 8: Create significance map for FDR-corrected voxels with positive delta
 positive_mask = delta_r_obs_3d > 0
 significance_map_fdr_positive_3d = np.zeros_like(delta_r_obs_3d)
 significance_map_fdr_positive_3d[significant_fdr_mask_3d & positive_mask] = delta_r_obs_3d[significant_fdr_mask_3d & positive_mask]
@@ -93,17 +83,11 @@ print(f"Proportion of significant voxels within brain mask (all): {num_significa
 num_significant_positive_voxels = np.sum(significant_fdr_mask_3d & positive_mask)
 print(f"Number of significant voxels with positive delta: {num_significant_positive_voxels}")
 print(f"Proportion of significant voxels with positive delta: {num_significant_positive_voxels / np.sum(brain_mask):.2%}")
-if num_significant_voxels == 0:
-    print("No significant voxels found after FDR correction.")
-else:
-    print(f"Mean ΔR² in significant voxels (all): {np.mean(delta_r_obs_3d[significant_fdr_mask_3d]):.4f}")
-    print(f"Median ΔR² in significant voxels (all): {np.median(delta_r_obs_3d[significant_fdr_mask_3d]):.4f}")
-if num_significant_positive_voxels > 0:
-    print(f"Mean ΔR² in significant positive voxels: {np.mean(delta_r_obs_3d[significant_fdr_mask_3d & positive_mask]):.4f}")
-    print(f"Median ΔR² in significant positive voxels: {np.median(delta_r_obs_3d[significant_fdr_mask_3d & positive_mask]):.4f}")
 
 # Create and save NIfTI files
 significance_fdr_nifti = nib.Nifti1Image(significance_map_fdr_3d, affine)
+
+
 nib.save(significance_fdr_nifti, 'results/significant_improvements_fdr_corrected_all.nii')
 significance_fdr_positive_nifti = nib.Nifti1Image(significance_map_fdr_positive_3d, affine)
 nib.save(significance_fdr_positive_nifti, 'results/significant_improvements_fdr_corrected_positive.nii')
@@ -120,8 +104,6 @@ plotting.plot_glass_brain(
     axes=ax
 )
 plt.tight_layout()
-plt.savefig('results/significant_improvements_fdr_glass_brain_all.png', dpi=300)
-plt.close()
 
 # Plot stat map (all significant voxels)
 min_delta = np.min(np.abs(significance_map_fdr_3d[significance_map_fdr_3d != 0])) if np.any(significance_map_fdr_3d != 0) else 0

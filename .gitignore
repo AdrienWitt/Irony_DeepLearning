@@ -3,3 +3,4 @@ envs/
 cv_results/
 request.sh
 __pycache__/
+results/

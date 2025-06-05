@@ -13,11 +13,11 @@ import nibabel as nib
 
 # os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
 # args = argparse.Namespace(
-#     use_audio = True,
+#     use_audio = False,
 #     use_text = False,
 #     use_base_features=True,
-#     use_text_weighted = False,
-#     use_audio_opensmile = False,
+#     use_text_weighted = True,
+#     use_audio_opensmile = True,
 #     include_tasks = ["irony", "sarcasm"],
 #     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False, data_type = 'unormalized')
 
@@ -49,8 +49,8 @@ def parse_arguments():
                             help="Explained variance threshold for PCA (default: 0.60).")
     dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
                             help="List of tasks to include (default: all available tasks).")
-    dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unormalized"], default="unormalized",
-                            help="Type of fMRI data to use: mc (mean-centered), normalized, or unnormalized (default: unnormalized).")
+    dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unormalized", "normalized_time"], default="unormalized",
+                            help="Type of fMRI data to use: mc (mean-centered), normalized, normalized_time, or unormalized (default: unormalized).")
     
 
     # **Analysis-related arguments**
@@ -144,13 +144,13 @@ def adjust_alpha(database_train, args):
     
     # Case 2: Individual features - adjust alpha
     elif args.use_text_weighted:
-        alpha = args.alpha * n_features / 83  # Adjust for text weighted features
+        alpha = args.alpha * n_features / 72 #83  # Adjust for text weighted features
         print(f"- Using corrected alpha for text_weighted: {alpha}")
     elif args.use_audio:
-        alpha = args.alpha * n_features / 83  # Adjust for audio features
+        alpha = args.alpha * n_features / 72 #83  # Adjust for audio features
         print(f"- Using corrected alpha for audio: {alpha}")
     elif args.use_audio_opensmile:
-        alpha = args.alpha * n_features / 83  # Adjust for opensmile features
+        alpha = args.alpha * n_features / 72 #83  # Adjust for opensmile features
         print(f"- Using corrected alpha for opensmile: {alpha}")
     
     return alpha
