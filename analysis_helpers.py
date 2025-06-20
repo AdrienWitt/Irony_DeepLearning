@@ -13,7 +13,7 @@ def get_paths():
             "mc": os.path.join(base_path, "data", "fmri", "mc"),
             "normalized": os.path.join(base_path, "data", "fmri", "normalized"),
             "unormalized": os.path.join(base_path, "data", "fmri", "unormalized"),
-            "normalized_time": os.path.join(base_path, "data", "fmri", "normalized_time")
+            "normalized_time": os.path.join(base_path, "data", "fmri", "normalized_time_flatten")
         },
         "embeddings_text_path": os.path.join(base_path, "embeddings", "text"),
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
@@ -44,7 +44,7 @@ def get_unique_filename(base_path, filename):
 
     return os.path.join(base_path, new_filename)
 
-def load_dataset(args, paths, participant_list):
+def load_dataset(args, paths, participant_list, mask):
     """Loads the dataset using parsed arguments."""
 
     dataset_args = {
@@ -64,9 +64,11 @@ def load_dataset(args, paths, participant_list):
         "included_tasks": args.include_tasks
     }
 
-    database = dataset.BaseDataset(participant_list=participant_list, **dataset_args)
+    #database = dataset.BaseDataset(participant_list=participant_list, **dataset_args)
+    data, data_fmri, ids_list = dataset.WholeBrainDataset(participant_list=participant_list, mask=mask, **dataset_args).create_data()
+
     
-    return database
+    return data, data_fmri, ids_list
 
 def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
     if os.path.exists(top_voxels_path):
@@ -83,3 +85,65 @@ def get_top_voxels(database_train, img_size, voxel_list, top_voxels_path):
         print(f"Computed and saved {len(top_voxels)} top voxels to {top_voxels_path}")
 
     return top_voxels
+
+def mult_diag(d, mtx, left=True):
+    """Multiply a full matrix by a diagonal matrix.
+    This function should always be faster than dot.
+
+    Input:
+      d -- 1D (N,) array (contains the diagonal elements)
+      mtx -- 2D (N,N) array
+
+    Output:
+      mult_diag(d, mts, left=True) == dot(diag(d), mtx)
+      mult_diag(d, mts, left=False) == dot(mtx, diag(d))
+    
+    By Pietro Berkes
+    From http://mail.scipy.org/pipermail/numpy-discussion/2007-March/026807.html
+    """
+    if left:
+        return (d*mtx.T).T
+    else:
+        return d*mtx
+
+import time
+import logging
+
+def counter(iterable, countevery=100, total=None, logger=logging.getLogger("counter")):
+    """Logs a status and timing update to [logger] every [countevery] draws from [iterable].
+    If [total] is given, log messages will include the estimated time remaining.
+    """
+    start_time = time.time()
+
+    ## Check if the iterable has a __len__ function, use it if no total length is supplied
+    if total is None:
+        if hasattr(iterable, "__len__"):
+            total = len(iterable)
+    
+    for count, thing in enumerate(iterable):
+        yield thing
+        
+        if not count%countevery:
+            current_time = time.time()
+            elapsed_time = max(current_time - start_time, 1e-8)
+            rate = float(count + 1) / elapsed_time
+
+            if rate>1: ## more than 1 item/second
+                ratestr = "%0.2f items/second"%rate
+            else: ## less than 1 item/second
+                ratestr = "%0.2f seconds/item"%(rate**-1)
+            
+            if total is not None:
+                remitems = total-(count+1)
+                remtime = remitems/rate
+                timestr = ", %s remaining" % time.strftime('%H:%M:%S', time.gmtime(remtime))
+                itemstr = "%d/%d"%(count+1, total)
+            else:
+                timestr = ""
+                itemstr = "%d"%(count+1)
+
+            formatted_str = "%s items complete (%s%s)"%(itemstr,ratestr,timestr)
+            if logger is None:
+                print(formatted_str)
+            else:
+                logger.info(formatted_str)

@@ -49,8 +49,15 @@ print(f"Zero voxels in r_text_audio (within brain): {np.sum(r_text_audio[brain_m
 # Step 1: Get the original shape
 X, Y, Z = r_audio.shape
 
-# Step 2: Compute observed improvement
-delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
+# # Step 2: Compute observed improvement
+# delta_r_obs_3d = r_text_audio - np.maximum(r_audio, r_text)
+
+
+#delta_r_obs_3d = r_audio - np.maximum(r_text_audio, r_text)
+valid_mask = (r_text != 0) & (r_audio != 0) & (r_text_audio != 0)
+delta_r = np.zeros_like(r_text)
+delta_r[valid_mask] = r_text[valid_mask] - np.maximum(r_text_audio[valid_mask], r_audio[valid_mask])
+
 
 # Step 3: Flatten only brain voxels
 brain_mask_flat = brain_mask.ravel()
@@ -59,7 +66,7 @@ V = np.sum(valid_voxels)  # Number of brain voxels
 r_audio_flat = r_audio.reshape(-1)[valid_voxels]
 r_text_flat = r_text.reshape(-1)[valid_voxels]
 r_text_audio_flat = r_text_audio.reshape(-1)[valid_voxels]
-delta_r_obs_flat = delta_r_obs_3d.reshape(-1)[valid_voxels]
+delta_r_obs_flat = delta_r.reshape(-1)[valid_voxels]
 
 # Step 4: Permutation test
 num_permutations = 5000
@@ -99,13 +106,13 @@ significant_clusters = np.where(cluster_p_values < 0.05)[0] + 1  # Cluster label
 clustered_mask_3d = np.isin(labeled_array, significant_clusters)
 
 # Step 10: Create significance map (all significant clusters)
-significance_map_3d = np.zeros_like(delta_r_obs_3d)
-significance_map_3d[clustered_mask_3d] = delta_r_obs_3d[clustered_mask_3d]
+significance_map_3d = np.zeros_like(delta_r)
+significance_map_3d[clustered_mask_3d] = delta_r[clustered_mask_3d]
 
 # Step 11 (Optional): Filter for positive improvements
-positive_mask = delta_r_obs_3d > 0
-significance_map_positive_3d = np.zeros_like(delta_r_obs_3d)
-significance_map_positive_3d[clustered_mask_3d & positive_mask] = delta_r_obs_3d[clustered_mask_3d & positive_mask]
+positive_mask = delta_r > 0
+significance_map_positive_3d = np.zeros_like(delta_r)
+significance_map_positive_3d[clustered_mask_3d & positive_mask] = delta_r[clustered_mask_3d & positive_mask]
 
 # Print cluster summary
 if len(significant_clusters) == 0:

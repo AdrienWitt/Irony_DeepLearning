@@ -12,7 +12,7 @@ from nilearn.glm.first_level import compute_regressor
 folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
 files_type = ['swrMF']
-output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normt'
+output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time_flatten'
 if not os.path.exists(output_dir_fmri):
     os.makedirs(output_dir_fmri)
 output_dir_mask = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks'
@@ -103,7 +103,7 @@ def mean_center(fmri):
     fmri_temp[nonzero_mask] -= global_mean
     return fmri_temp
 
-def mean_z_norm_time(fmri):
+def mean_z_norm_time_inmask(fmri):
     # Create a mask for non-zero voxels across all time points
     nonzero_mask = np.any(fmri != 0, axis=3)  # Shape: (x, y, z)
     if not np.any(nonzero_mask):
@@ -124,6 +124,14 @@ def mean_z_norm_time(fmri):
     print(f"Std range across non-zero voxels: {np.min(voxel_stds):.4f} to {np.max(voxel_stds):.4f}")
     return fmri_temp
 
+def mean_z_norm_time(fmri):
+    fmri_temp = np.zeros_like(fmri, dtype=np.float64)
+    mean_time = np.mean(fmri, axis=3, keepdims=True)
+    std_time = np.std(fmri, axis=3, keepdims=True)
+    std_time = np.where(std_time == 0, 1, std_time)
+    fmri_temp = (fmri - mean_time) / std_time
+    return fmri_temp
+    
 def mean_center_time(fmri):
     # Create a mask for non-zero voxels across all time points
     nonzero_mask = np.any(fmri != 0, axis=3)  # Shape: (x, y, z)   
@@ -209,10 +217,10 @@ for file_type in files_type:
             subj_dir = os.path.join(output_dir_fmri, participant)
             if not os.path.exists(subj_dir):
                 os.makedirs(subj_dir)
-            cropped_img, mask_filename = crop_skull_background(concatenated_img, participant, run_number, subj_dir)
-            fmri = cropped_img.get_fdata()
-            affine = cropped_img.affine
-            header = cropped_img.header
+            #cropped_img, mask_filename = crop_skull_background(concatenated_img, participant, run_number, subj_dir)
+            fmri = concatenated_img.get_fdata()
+            affine = concatenated_img.affine
+            header = concatenated_img.header
             #fmri_normalized = mean_center(fmri)
             #fmri_normalized = fmri
             #fmri_normalized = mean_z_norm(fmri)
