@@ -50,7 +50,8 @@ def parse_arguments():
                             help="List of tasks to include (default: all available tasks).")
     dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unormalized", "normalized_time"], default="unormalized",
                             help="Type of fMRI data to use: mc (mean-centered), normalized, normalized_time, or unormalized (default: unormalized).")
-    
+    return parser.parse_args()
+
 def main():
     start_time = time.time()  # Start timing
 
@@ -65,8 +66,6 @@ def main():
           f"- Use PCA: {args.use_pca}\n"
           f"- Use UMAP: {args.use_umap}\n"
           f"- PCA threshold: {args.pca_threshold}\n"
-          f"- Ridge alpha: {args.alpha}\n"
-          f"- Number of parallel jobs: {args.num_jobs}\n"
           f"- Data type: {args.data_type}\n"
           f"- Included tasks: {', '.join(args.include_tasks)}")
     
@@ -116,8 +115,9 @@ def main():
     nib.save(corrs_nifti, result_file_mean_nii)
 
     
-
-
+# Run the script
+if __name__ == "__main__":
+    main()
 
     
 

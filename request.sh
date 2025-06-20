@@ -15,4 +15,4 @@ source envs/py39/bin/activate
 export PYTHONUNBUFFERED=1
 export JOBLIB_TEMP_FOLDER=/tmp
 
-python3 main.py --use_text --use_base_features --num_jobs 50 --use_pca --pca_threshold 0.50 --alpha 0.1
+python3 main.py --use_text --use_base_features --num_jobs 50 --use_pca --pca_threshold 0.60 --alpha 0.1
