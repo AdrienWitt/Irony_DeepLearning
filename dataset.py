@@ -356,7 +356,7 @@ class WholeBrainDataset(Dataset):
                         })
                     
                     
-                    ids_list.append(int(participant[-1:]))
+                    ids_list.append(int(participant[1:]))
                     
                     # Load embeddings
                     if self.use_text and self.embeddings_text_path:
