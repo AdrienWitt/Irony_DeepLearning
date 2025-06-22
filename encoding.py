@@ -14,15 +14,15 @@ import nibabel as nib
 from ridge_cv import ridge_cv_participant
 from nilearn.image import resample_to_img
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
-args = argparse.Namespace(
-    use_audio = False,
-    use_text = False,
-    use_base_features=True,
-    use_text_weighted = True,
-    use_audio_opensmile = True,
-    include_tasks = ["irony", "sarcasm", "tom", "semantic", "prosody"],
-    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.6, use_umap = False, data_type = 'normalized_time')
+# os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning")
+# args = argparse.Namespace(
+#     use_audio = False,
+#     use_text = False,
+#     use_base_features=True,
+#     use_text_weighted = True,
+#     use_audio_opensmile = True,
+#     include_tasks = ["irony", "sarcasm", "tom", "semantic", "prosody"],
+#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.6, use_umap = False, data_type = 'normalized_time')
 
 
 def parse_arguments():
