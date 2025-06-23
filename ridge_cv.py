@@ -1,4 +1,3 @@
-#import scipy
 import os
 import numpy as np
 import logging
@@ -9,17 +8,17 @@ from sklearn.model_selection import GroupKFold
 from joblib import Parallel, delayed
 import sys
 
-zs = lambda v: (v-v.mean(0))/v.std(0) ## z-score function
+zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
+
+logging.basicConfig(level=logging.INFO)
 
 ridge_logger = logging.getLogger("ridge_corr")
-
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
 backend = 'loky'
 script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
-
 
 def _compute_fold_corrs(fold_idx, train_idx, test_idx, stim, resp, valphas, normalpha, singcutoff, use_corr, logger):
     """Helper function to compute correlations for a single CV fold."""
@@ -49,8 +48,6 @@ def ridge_cv_participant(stim_df, resp, alphas, participant_ids, nboots=50,
         Ridge parameters to test (e.g., np.logspace(0, 3, 20)).
     participant_ids : array_like, shape (T,)
         Participant IDs for each time point.
-    task_ids : array_like, shape (T,), optional
-        Task IDs for task covariates.
     nboots : int, default 50
         Number of LOPO bootstrap iterations (e.g., 50 for 50 participants).
     corrmin : float, default 0.1
@@ -61,7 +58,7 @@ def ridge_cv_participant(stim_df, resp, alphas, participant_ids, nboots=50,
         Normalize alphas by largest singular value.
     use_corr : boolean, default True
         Use correlation (True) or R-squared (False).
-    return_wt : boolean, default True
+    return_wt : boolean, default False
         Return regression weights.
     normalize_stim : boolean, default False
         Z-score stimuli (False if pre-normalized).
@@ -95,16 +92,28 @@ def ridge_cv_participant(stim_df, resp, alphas, participant_ids, nboots=50,
     if participant_ids is None:
         raise ValueError("participant_ids required for participant-based CV and bootstrapping.")
 
-    logger.info("Optimizing alphas with LOPO bootstrapping...")
-    valphas, _, _ = bootstrap_ridge_alpha_lopo(
+    logger.info("Starting alpha optimization with %d LOPO bootstrap iterations...", nboots)
+    valphas, allRcorrs, _ = bootstrap_ridge_alpha_lopo(
         Rstim=stim, Rresp=resp, alphas=alphas, nboots=nboots, participant_ids=participant_ids,
         corrmin=corrmin, singcutoff=singcutoff, normalpha=normalpha, use_corr=use_corr,
         with_replacement=with_replacement, n_jobs=bootstrap_n_jobs, logger=logger
     )
 
-    logger.info("Performing 5-fold participant-based CV...")
+    # Log alpha selection results
+    logger.info("Selecting best alpha for each voxel...")
+    if allRcorrs is not None:
+        meanbootcorrs = allRcorrs.mean(2)  # Mean across bootstraps
+        bestalphainds = np.argmax(meanbootcorrs, 0)
+        valphas = alphas[bestalphainds]
+        log_template = "Alpha=%0.3f selected for %d voxels (mean corr=%0.5f)"
+        for ua in np.unique(valphas):
+            sel_vox = np.nonzero(valphas == ua)[0]
+            mean_corr = np.mean(meanbootcorrs[bestalphainds[sel_vox], sel_vox]) if len(sel_vox) > 0 else 0
+            logger.info(log_template % (ua, len(sel_vox), mean_corr))
+
+    logger.info("Performing 5-fold participant-based CV with %d jobs...", n_jobs)
     gkf = GroupKFold(n_splits=5)
-    fold_results = Parallel(n_jobs=n_jobs, backend=backend, verbose=1)(
+    fold_results = Parallel(n_jobs=n_jobs, backend=backend)(
         delayed(_compute_fold_corrs)(
             fold_idx, train_idx, test_idx, stim, resp, valphas, normalpha, singcutoff, use_corr, logger
         )
@@ -113,14 +122,15 @@ def ridge_cv_participant(stim_df, resp, alphas, participant_ids, nboots=50,
 
     fold_corrs = np.stack(fold_results, axis=1)
     corrs = np.mean(fold_corrs, axis=1)
+    logger.info("Completed CV: mean correlation across voxels=%0.5f, max=%0.5f", np.mean(corrs), np.max(corrs))
 
     wt = []
     if return_wt:
         logger.info("Computing weights on full dataset...")
         wt = ridge(stim, resp, valphas, singcutoff=singcutoff, normalpha=normalpha, logger=logger)
+        logger.info("Weights computed for %d features and %d voxels.", wt.shape[0], wt.shape[1])
 
     return wt, corrs, valphas, fold_corrs
-
 
 def _bootstrap_iter(val_participant, Rstim, Rresp, alphas, participant_ids, corrmin, singcutoff, normalpha, use_corr, logger):
     """Helper function for one LOPO iteration."""
@@ -164,7 +174,7 @@ def bootstrap_ridge_alpha_lopo(Rstim, Rresp, alphas, nboots, participant_ids,
         participant_choices = participant_choices[:nboots]
 
     logger.info(f"Running {nboots} LOPO bootstrap iterations with {n_jobs} jobs...")
-    Rcmats = Parallel(n_jobs=n_jobs, backend=backend, verbose=1)(
+    Rcmats = Parallel(n_jobs=n_jobs, backend=backend, verbose = 1)(
         delayed(_bootstrap_iter)(
             val_participant, Rstim, Rresp, alphas, participant_ids, corrmin, singcutoff, normalpha, use_corr, logger
         )
