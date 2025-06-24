@@ -80,7 +80,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    participant_list = participant_list[0:5]  # Limit to 5 participants for testing
+    #participant_list = participant_list[0:5]  # Limit to 5 participants for testing
 
     mask = nib.load("ROIs/ROIall_bin.nii")
     exemple_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
