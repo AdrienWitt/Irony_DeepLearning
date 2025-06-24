@@ -88,7 +88,7 @@ def main():
 
     stim_df, resp, ids_list = analysis_helpers.load_dataset(args, paths, participant_list, resampled_mask)
     
-    alphas = np.logspace(-1, 3, 10)
+    alphas = np.logspace(-3, 3, 10)
 
     # Handle precomputed valphas
     if not args.optimize_alpha:
