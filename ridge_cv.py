@@ -9,15 +9,22 @@ from joblib import Parallel, delayed
 import sys
 import pandas as pd
 
-zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
 
 ridge_logger = logging.getLogger("ridge_corr")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
 backend = 'loky'
 script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
+
+zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
+
 
 def _compute_fold_corrs(fold_idx, train_idx, test_idx, stim, resp, valphas, normalpha, singcutoff, use_corr, logger):
     """Helper function to compute correlations for a single CV fold."""
@@ -146,14 +153,17 @@ def ridge_cv_participant(stim_df, resp, alphas, participant_ids, nboots=50,
 
     return wt, corrs, valphas, fold_corrs
 
-def _bootstrap_iter(val_participant, Rstim, Rresp, alphas, participant_ids, corrmin, singcutoff, normalpha, use_corr, logger):
+def _bootstrap_iter(val_participant, Rstim, Rresp, alphas, participant_ids, corrmin, singcutoff, normalpha, use_corr, logger, iteration, total):
     """Helper function for one LOPO iteration."""
+    logger.info(f"Bootstrap iteration {iteration+1}/{total} for participant {val_participant}...")
     heldinds = participant_ids == val_participant
     notheldinds = ~heldinds
     RRstim, PRstim = Rstim[notheldinds, :], Rstim[heldinds, :]
     RRresp, PRresp = Rresp[notheldinds, :], Rresp[heldinds, :]
-    return ridge_corr(RRstim, PRstim, RRresp, PRresp, alphas, corrmin=corrmin, singcutoff=singcutoff,
-                      normalpha=normalpha, use_corr=use_corr, logger=logger)
+    result = ridge_corr(RRstim, PRstim, RRresp, PRresp, alphas, corrmin=corrmin, singcutoff=singcutoff,
+                        normalpha=normalpha, use_corr=use_corr, logger=logger)
+    logger.info(f"Completed iteration {iteration+1}/{total} for participant {val_participant}.")
+    return result
 
 def bootstrap_ridge_alpha_lopo(Rstim, Rresp, alphas, nboots, participant_ids,
                                corrmin=0.1, joined=None, singcutoff=1e-10, normalpha=False,
@@ -188,11 +198,11 @@ def bootstrap_ridge_alpha_lopo(Rstim, Rresp, alphas, nboots, participant_ids,
         participant_choices = participant_choices[:nboots]
 
     logger.info(f"Running {nboots} LOPO bootstrap iterations with {n_jobs} jobs...")
-    Rcmats = Parallel(n_jobs=n_jobs, backend=backend, verbose = 1)(
+    Rcmats = Parallel(n_jobs=n_jobs, backend=backend, verbose=1)(
         delayed(_bootstrap_iter)(
-            val_participant, Rstim, Rresp, alphas, participant_ids, corrmin, singcutoff, normalpha, use_corr, logger
+            val_participant, Rstim, Rresp, alphas, participant_ids, corrmin, singcutoff, normalpha, use_corr, logger, i, nboots
         )
-        for val_participant in counter(participant_choices, countevery=1, total=nboots)
+        for i, val_participant in enumerate(participant_choices)
     )
 
     valinds = [participant_ids == val_participant for val_participant in participant_choices]
