@@ -52,9 +52,36 @@ def parse_arguments():
     # Analysis-related arguments
     analysis_group = parser.add_argument_group("Analysis Arguments")
     analysis_group.add_argument("--num_jobs", type=int, default=-1,
-                                help="Number of parallel jobs for voxel processing (default: -1 for all cores).")
+                               help="Number of parallel jobs for voxel processing (default: -1 for all cores).")
     analysis_group.add_argument("--optimize_alpha", action="store_true",
-                                help="Optimize alpha values using LOO bootstrapping (default: False, use precomputed valphas if provided).")
+                               help="Optimize alpha values using LOO bootstrapping (default: False, use precomputed valphas if provided).")
+    analysis_group.add_argument("--alpha_min", type=float, default=-3,
+                               help="Minimum exponent for alpha values in logspace (default: -3).")
+    analysis_group.add_argument("--alpha_max", type=float, default=3,
+                               help="Maximum exponent for alpha values in logspace (default: 3).")
+    analysis_group.add_argument("--num_alphas", type=int, default=10,
+                               help="Number of alpha values to test in logspace (default: 10).")
+    analysis_group.add_argument("--nboots", type=int, default=None,
+                               help="Number of bootstrap iterations (default: number of participants).")
+    analysis_group.add_argument("--corrmin", type=float, default=0.0,
+                               help="Minimum correlation threshold for fMRI correlations (default: 0.0).")
+    analysis_group.add_argument("--n_splits", type=int, default=None,
+                               help="Number of splits for cross-validation (default: number of participants for LOO CV).")
+    analysis_group.add_argument("--normalpha", action="store_true", default = True,
+                               help="Normalize alpha values for reuse across models (default: False).")
+    analysis_group.add_argument("--use_corr", action="store_true", default = True,
+                               help="Use correlation as the evaluation metric (default: False).")
+    analysis_group.add_argument("--return_wt", action="store_true",
+                               help="Return weight maps from ridge regression (default: False).")
+    analysis_group.add_argument("--normalize_stim", action="store_true",
+                               help="Normalize stimulus features before regression (default: False).")
+    analysis_group.add_argument("--normalize_resp", action="store_true", default=True,
+                               help="Normalize response (fMRI) data before regression (default: True).")
+    analysis_group.add_argument("--with_replacement", action="store_true",
+                               help="Perform bootstrapping with replacement (default: False).")
+    analysis_group.add_argument("--results_dir", type=str, default=None,
+                               help="Custom directory to save results (default: uses paths from analysis_helpers).")
+
 
     return parser.parse_args()
 
@@ -76,11 +103,22 @@ def main():
           f"- Data type: {args.data_type}\n"
           f"- Number of jobs: {args.num_jobs}\n"
           f"- Optimize alpha: {args.optimize_alpha}\n"
+          f"- Alpha range: 10^{args.alpha_min} to 10^{args.alpha_max} with {args.num_alphas} values\n"
+          f"- Number of bootstraps: {args.nboots if args.nboots is not None else 'num_participants'}\n"
+          f"- Correlation minimum: {args.corrmin}\n"
+          f"- Number of CV splits: {args.n_splits if args.n_splits is not None else 'num_participants'}\n"
+          f"- Normalize alphas: {args.normalpha}\n"
+          f"- Use correlation metric: {args.use_corr}\n"
+          f"- Return weights: {args.return_wt}\n"
+          f"- Normalize stimulus: {args.normalize_stim}\n"
+          f"- Normalize response: {args.normalize_resp}\n"
+          f"- Bootstrap with replacement: {args.with_replacement}\n"
+          f"- Results directory: {args.results_dir if args.results_dir else 'default'}\n"
           f"- Included tasks: {', '.join(args.include_tasks)}")
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = participant_list[10:30]  # Limit to 5 participants for testing
+    participant_list = participant_list[5:10]  # Limit to 5 participants for testing
 
     mask = nib.load("ROIs/ROIall_bin.nii")
     exemple_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
@@ -88,7 +126,8 @@ def main():
 
     stim_df, resp, ids_list = analysis_helpers.load_dataset(args, paths, participant_list, resampled_mask)
     
-    alphas = np.logspace(-3, 3, 10)
+    # Set alphas based on arguments
+    alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
 
     # Handle precomputed valphas
     if not args.optimize_alpha:
@@ -100,25 +139,29 @@ def main():
     else:
         valphas = None
 
+    # Set nboots and n_splits based on arguments or default to number of participants
+    nboots = args.nboots if args.nboots is not None else len(participant_list)
+    n_splits = args.n_splits if args.n_splits is not None else len(participant_list)
+
     # Perform ridge regression with LOO CV
-    _, corrs, valphas, fold_corrs, _ = ridge_cv_lopo(
+    weights, corrs, valphas, fold_corrs, _ = ridge_cv_lopo(
         stim_df=stim_df, 
         resp=resp, 
         alphas=alphas, 
         participant_ids=ids_list, 
-        nboots=len(participant_list),  # Match nboots to number of participants
-        corrmin=0,  # Reasonable threshold for fMRI correlations
-        n_splits=len(participant_list),  # LOO CV
+        nboots=nboots, 
+        corrmin=args.corrmin,
+        n_splits=n_splits, 
         singcutoff=1e-10, 
-        normalpha=True,  # Normalize alphas for reuse across models
-        use_corr=True, 
-        return_wt=False,
-        normalize_stim=False, 
-        normalize_resp=True, 
+        normalpha=args.normalpha,
+        use_corr=args.use_corr, 
+        return_wt=args.return_wt,
+        normalize_stim=args.normalize_stim, 
+        normalize_resp=args.normalize_resp, 
         n_jobs=args.num_jobs, 
-        with_replacement=False,
+        with_replacement=args.with_replacement,
         optimize_alpha=args.optimize_alpha,
-        valphas=valphas,  # Pass precomputed valphas if provided
+        valphas=valphas,
         logger=ridge_logger
     )
     
