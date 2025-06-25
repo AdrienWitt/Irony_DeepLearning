@@ -107,6 +107,7 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
         if nboots > n_participants and not with_replacement:
             raise ValueError(f"nboots ({nboots}) cannot exceed number of participants ({n_participants}) without replacement.")
         
+        np.random.seed(42)
         participant_choices = (np.random.choice(unique_participants, size=nboots, replace=True)
                               if with_replacement else
                               np.random.permutation(unique_participants)[:min(nboots, n_participants)])
