@@ -352,7 +352,8 @@ class WholeBrainDataset(Dataset):
                             "evaluation": evaluation,
                             "age": age,
                             "gender": gender,
-                            "participant": participant
+                            "participant": participant,
+                            "situation" : situation,
                         })
                     
                     ids_list.append(int(participant[1:]))
@@ -383,7 +384,7 @@ class WholeBrainDataset(Dataset):
         df = pd.DataFrame(final_data) if self.use_base_features else pd.DataFrame(index=range(sample_count))
         if self.use_base_features:
             df.reset_index(drop=True, inplace=True)
-            categorical_cols = ['context', 'semantic', 'prosody', 'task', 'gender', 'participant']
+            categorical_cols = ['context', 'semantic', 'prosody', 'task', 'gender', 'participant', 'situation']
             df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
             df['evaluation'] = df['evaluation'].fillna(df['evaluation'].median())
             df['evaluation'] = (df['evaluation'] - df['evaluation'].min()) / (df['evaluation'].max() - df['evaluation'].min())
