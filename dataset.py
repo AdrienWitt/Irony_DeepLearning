@@ -355,7 +355,6 @@ class WholeBrainDataset(Dataset):
                             "participant": participant
                         })
                     
-                    
                     ids_list.append(int(participant[1:]))
                     
                     # Load embeddings

@@ -13,7 +13,7 @@ import analysis_helpers
 import nibabel as nib
 from nilearn.image import resample_to_img
 import logging
-from ridge_cv import ridge_cv_participant  # Assume ridge_cv_participant is in ridge_cv.py
+from ridge_cv import ridge_cv_lopo
 
 # Configure logging
 logging.basicConfig(
@@ -80,7 +80,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    #participant_list = participant_list[0:5]  # Limit to 5 participants for testing
+    #participant_list = participant_list[10:30]  # Limit to 5 participants for testing
 
     mask = nib.load("ROIs/ROIall_bin.nii")
     exemple_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
@@ -101,7 +101,7 @@ def main():
         valphas = None
 
     # Perform ridge regression with LOO CV
-    _, corrs, valphas, fold_corrs = ridge_cv_participant(
+    _, corrs, valphas, fold_corrs, _ = ridge_cv_lopo(
         stim_df=stim_df, 
         resp=resp, 
         alphas=alphas, 
@@ -117,7 +117,6 @@ def main():
         normalize_resp=True, 
         n_jobs=args.num_jobs, 
         with_replacement=False,
-        bootstrap_n_jobs=args.num_jobs,
         optimize_alpha=args.optimize_alpha,
         valphas=valphas,  # Pass precomputed valphas if provided
         logger=ridge_logger
