@@ -65,6 +65,7 @@ def load_dataset(args, paths, participant_list, mask):
     }
 
     #database = dataset.BaseDataset(participant_list=participant_list, **dataset_args)
+    #data, data_fmri, ids_list = dataset.WholeBrainDataset(participant_list=participant_list, mask=mask, **dataset_args).create_data()
     data, data_fmri, ids_list = dataset.WholeBrainDataset(participant_list=participant_list, mask=mask, **dataset_args).create_data()
 
     

@@ -24,8 +24,6 @@ import nibabel as nib
 # df_train = database_train.get_voxel_values(((50, 50, 50)))
 
 
-os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
-
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run fMRI Ridge Regression analysis.")
 

@@ -18,23 +18,22 @@ logging.basicConfig(
 )
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
-backend = 'loky'
+backend = 'multiprocessing'
 script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
 
 zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
 
-
-def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50,
-                  corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,
-                  return_wt=False, normalize_stim=False, normalize_resp=True,
-                  n_jobs=1, with_replacement=False, optimize_alpha=True,
-                  valphas=None, logger=ridge_logger):
+def ridge_cv(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50,
+                    corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,
+                    return_wt=False, normalize_stim=False, normalize_resp=True,
+                    n_jobs=1, with_replacement=False, optimize_alpha=True,
+                    valphas=None, logger=None):
     """
-    Performs ridge regression with leave-one-participant-out (LOPO) cross-validation and/or
-    LOPO bootstrapping for alpha optimization. Combines participant-based CV and alpha optimization
-    into a single function with efficient LOPO splitting.
+    Performs ridge regression with K-group cross-validation and/or LOPO bootstrapping for alpha optimization.
+    Combines group-based CV and alpha optimization into a single function with efficient group splitting.
+    If n_groups equals the number of unique participants, it performs leave-one-participant-out CV.
 
     Parameters
     ----------
@@ -48,13 +47,13 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
         Participant IDs for each time point.
     nboots : int, default 50
         Number of LOPO bootstrap iterations for alpha optimization (if optimize_alpha=True).
-    n_splits : int, default 5
-        Number of LOPO CV folds (if 0, skips CV and only optimizes alphas).
+    n_groups : int, default 50
+        Number of groups for K-group CV (if equal to number of participants, performs LOPO CV).
     corrmin : float, default 0.1
         Minimum correlation for logging.
     singcutoff : float, default 1e-10
         Singular value cutoff for SVD.
-    normalpha : boolean, type boolean
+    normalpha : boolean, default False
         Normalize alphas by largest singular value.
     use_corr : boolean, default True
         Use correlation (True) or R-squared (False).
@@ -72,22 +71,23 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
         Optimize alpha using LOPO bootstrapping. If False, valphas must be provided.
     valphas : array_like, shape (M,), default None
         Precomputed optimal alpha per voxel, required if optimize_alpha=False.
-    logger : logging.Logger, default ridge_logger
+    logger : logging.Logger, default None
         Logger for tracking progress.
 
     Returns
     -------
     wt : array_like, shape (N+P-1[+K-1], M)
         Regression weights (empty if return_wt=False).
-    cor Searge correlation across CV folds (empty if n_splits=0).
+    corrs : array_like, shape (M,)
+        Average correlation across CV folds (empty if n_groups=0).
     valphas : array_like, shape (M,)
         Optimal alpha per voxel (either optimized or provided).
-    fold_corrs : array_like, shape (M, n_splits)
-        Correlations per voxel per CV fold (empty if n_splits=0).
+    fold_corrs : array_like, shape (M, n_groups)
+        Correlations per voxel per CV fold (empty if n_groups=0).
     bootstrap_corrs : array_like, shape (A, M, nboots)
         Correlations for each alpha, voxel, and bootstrap iteration (empty if optimize_alpha=False).
     """
-    stim = stim_df.to_numpy()
+    stim = stim_df.to_numpy().astype(np.float32)
     if stim.shape[0] != resp.shape[0]:
         raise ValueError("stim_df and resp must have same number of time points.")
     
@@ -95,7 +95,7 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
     resp = zs(resp) if normalize_resp else resp
     
     if participant_ids is None:
-        raise ValueError("participant_ids required for LOPO CV and bootstrapping.")
+        raise ValueError("participant_ids required for group CV and bootstrapping.")
     
     unique_participants = np.unique(participant_ids)
     n_participants = len(unique_participants)
@@ -103,7 +103,7 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
     # Handle alpha optimization
     bootstrap_corrs = None
     if optimize_alpha:
-        logger.info("Starting LOPO alpha optimization with %d iterations...", nboots)
+        logger.info("Starting LOPO alpha optimization with %d iterations...", nboots) if logger else None
         if nboots > n_participants and not with_replacement:
             raise ValueError(f"nboots ({nboots}) cannot exceed number of participants ({n_participants}) without replacement.")
         
@@ -113,7 +113,7 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
                               np.random.permutation(unique_participants)[:min(nboots, n_participants)])
         
         def _bootstrap_iter(val_participant, iteration, total):
-            logger.info(f"Bootstrap iteration {iteration+1}/{total} for participant {val_participant}...")
+            logger.info(f"Bootstrap iteration {iteration+1}/{total} for participant {val_participant}...") if logger else None
             heldinds = participant_ids == val_participant
             notheldinds = ~heldinds
             RRstim, PRstim = stim[notheldinds, :], stim[heldinds, :]
@@ -122,7 +122,7 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
                              corrmin=corrmin, singcutoff=singcutoff,
                              normalpha=normalpha, use_corr=use_corr, logger=logger)
         
-        bootstrap_results = Parallel(n_jobs=n_jobs, backend=backend)(
+        bootstrap_results = Parallel(n_jobs=n_jobs)(
             delayed(_bootstrap_iter)(val_participant, i, nboots)
             for i, val_participant in enumerate(participant_choices)
         )
@@ -135,52 +135,51 @@ def ridge_cv_lopo(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50
             for ua in np.unique(valphas):
                 sel_vox = np.nonzero(valphas == ua)[0]
                 mean_corr = np.mean(meanbootcorrs[bestalphainds[sel_vox], sel_vox]) if len(sel_vox) > 0 else 0
-                logger.info("Alpha=%0.3f selected for %d voxels (mean corr=%0.5f)", ua, len(sel_vox), mean_corr)
+                logger.info("Alpha=%0.3f selected for %d voxels (mean corr=%0.5f)", ua, len(sel_vox), mean_corr) if logger else None
     else:
         if valphas is None:
             raise ValueError("valphas must be provided when optimize_alpha=False.")
         if not isinstance(valphas, np.ndarray) or valphas.shape != (resp.shape[1],):
             raise ValueError(f"valphas must be a numpy array of shape ({resp.shape[1]},).")
-        logger.info("Using provided valphas for cross-validation...")
+        logger.info("Using provided valphas for cross-validation...") if logger else None
     
-    # Perform LOPO cross-validation
+    # Perform K-group cross-validation
     fold_corrs = []
     if n_splits > 0:
-        logger.info("Performing %d-fold LOPO cross-validation...", n_splits)
-        cv_participants = np.random.permutation(unique_participants)[:min(n_splits, n_participants)]
+        logger.info("Performing %d-group cross-validation...", n_splits) if logger else None
+        n_splits = min(n_splits, n_participants)  # Ensure n_groups does not exceed n_participants
+        gkf = GroupKFold(n_splits=n_splits)
         
-        def _cv_iter(fold_idx, val_participant):
-            logger.info(f"Processing CV fold {fold_idx+1}/{len(cv_participants)} for participant {val_participant}...")
-            heldinds = participant_ids == val_participant
-            train_idx, test_idx = ~heldinds, heldinds
+        def _cv_iter(fold_idx, train_idx, test_idx):
+            logger.info(f"Processing CV fold {fold_idx+1}/{n_splits}...") if logger else None
             Rstim, Pstim = stim[train_idx], stim[test_idx]
             Rresp, Presp = resp[train_idx], resp[test_idx]
             return ridge_corr_pred(Rstim, Pstim, Rresp, Presp, valphas,
                                   normalpha=normalpha, singcutoff=singcutoff,
                                   use_corr=use_corr, logger=logger)
         
-        fold_results = Parallel(n_jobs=n_jobs, backend=backend)(
-            delayed(_cv_iter)(fold_idx, val_participant)
-            for fold_idx, val_participant in enumerate(cv_participants)
+        fold_results = Parallel(n_jobs=n_jobs)(
+            delayed(_cv_iter)(fold_idx, train_idx, test_idx)
+            for fold_idx, (train_idx, test_idx) in enumerate(gkf.split(stim, resp, groups=participant_ids))
         )
         
         fold_corrs = np.stack(fold_results, axis=1) if fold_results else np.array([])
         if fold_corrs.size > 0:
             corrs = np.mean(fold_corrs, axis=1)
             logger.info("Completed CV: mean correlation across voxels=%0.5f, max=%0.5f",
-                        np.mean(corrs), np.max(corrs))
+                        np.mean(corrs), np.max(corrs)) if logger else None
         else:
             corrs = np.array([])
     else:
         corrs = np.array([])
-        logger.info("Skipping CV as n_splits=0.")
+        logger.info("Skipping CV as n_groups=0.") if logger else None
     
     # Compute weights if requested
     wt = []
     if return_wt:
-        logger.info("Computing weights on full dataset...")
+        logger.info("Computing weights on full dataset...") if logger else None
         wt = ridge(stim, resp, valphas, singcutoff=singcutoff, normalpha=normalpha, logger=logger)
-        logger.info("Weights computed for %d features and %d voxels.", wt.shape[0], wt.shape[1])
+        logger.info("Weights computed for %d features and %d voxels.", wt.shape[0], wt.shape[1]) if logger else None
     
     return wt, corrs, valphas, fold_corrs, bootstrap_corrs
 

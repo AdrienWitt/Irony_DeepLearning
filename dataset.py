@@ -7,9 +7,7 @@ import nibabel as nib
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import umap
-
-from nilearn.image import resample_to_img
-
+from concurrent.futures import ThreadPoolExecutor
 
 
 class BaseDataset(Dataset):
@@ -249,8 +247,6 @@ class BaseDataset(Dataset):
     def __len__(self):
         return len(self.data)
     
-    
-
 class WholeBrainDataset(Dataset):
     def __init__(self, participant_list, data_path, fmri_data_path, mask,
                  included_tasks=None, use_base_features=True, 
@@ -279,6 +275,7 @@ class WholeBrainDataset(Dataset):
         self.scaler = StandardScaler()
         self.register_args(**kwargs)
         self.mask = mask
+        self.fmri_cache = self.preload_fmri()
         self.data, self.fmri_data, self.ids_list = self.create_data()
 
     def register_args(self, **kwargs):
@@ -287,6 +284,18 @@ class WholeBrainDataset(Dataset):
             setattr(self, name, value)
         self.kwargs = kwargs
     
+    def preload_fmri(self):
+        """Preload all fMRI .npy files into a cache."""
+        fmri_cache = {}
+        for participant in self.participant_list:
+            participant_fmri_path = os.path.join(self.fmri_data_path, participant)
+            if not os.path.exists(participant_fmri_path):
+                continue
+            for fmri_file in os.listdir(participant_fmri_path):
+                if fmri_file.endswith('.npy'):
+                    fmri_cache[f"{participant}/{fmri_file}"] = np.load(os.path.join(participant_fmri_path, fmri_file), mmap_mode='r')
+        return fmri_cache
+
     def apply_pca(self, embeddings_df, prefix):
         """Apply PCA to embeddings."""
         embeddings_scaled = self.scaler.fit_transform(embeddings_df)
@@ -294,94 +303,114 @@ class WholeBrainDataset(Dataset):
         embeddings_pca = pca.fit_transform(embeddings_scaled)
         return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(embeddings_pca.shape[1])])
 
-    def create_data(self):
-        """Loads and processes data into feature DataFrame and fMRI DataFrame."""
-        final_data = []
-        embeddings_text_list = []
-        embeddings_text_weighted_list = []
-        embeddings_audio_list = []
-        embeddings_audio_opensmile_list = []
-        fmri_data_list = []
-        ids_list = []
+    def process_participant(self, participant):
+        """Process data for a single participant in parallel."""
+        participant_data_path = os.path.join(self.data_path, participant)
+        dfs = processing_helpers.load_dataframe(participant_data_path)
+        final_data, fmri_data_list, ids_list = [], [], []
+        embeddings_text_list, embeddings_text_weighted_list = [], []
+        embeddings_audio_list, embeddings_audio_opensmile_list = [], []
         task_counts = {task: 0 for task in self.included_tasks}
         sample_count = 0
         
-        mask_data = self.mask.get_fdata()
-        flattened_mask = mask_data.reshape(-1)
-        voxel_indices = np.where(flattened_mask > 0)[0]
+        voxel_indices = np.where(self.mask.get_fdata().reshape(-1) > 0)[0]
         
-        for participant in self.participant_list:
-            participant_data_path = os.path.join(self.data_path, participant)
-            dfs = processing_helpers.load_dataframe(participant_data_path)
-            
-            for df in dfs.values():
-                df = df.rename(columns=lambda x: x.strip())
-                for index, row in df.iterrows():
-                    task = row["task"]
-                    if task not in self.included_tasks:
-                        continue
+        for df in dfs.values():
+            df = df.rename(columns=lambda x: x.strip())
+            for index, row in df.iterrows():
+                task = row["task"]
+                if task not in self.included_tasks:
+                    continue
+                
+                task_counts[task] += 1
+                sample_count += 1
+                
+                context = row["Context"]
+                statement = row["Statement"]
+                situation = row["Situation"]
+                evaluation = row["Evaluation_Score"]
+                age = row["age"]
+                gender = row["genre"]
+                fmri_file = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement.npy'
+                fmri_path = f"{participant}/{fmri_file}"
+                
+                parts = row["Condition_name"].split("_")
+                context_cond = parts[0]
+                statement_cond = parts[1]
+                
+                fmri = self.fmri_cache.get(fmri_path)
+                if fmri is None:
+                    continue
+                
+                fmri_masked = fmri[:, voxel_indices]
+                fmri_data_list.append(fmri_masked)
+                
+                if self.use_base_features:
+                    final_data.append({
+                        "context": context_cond,
+                        "semantic": statement_cond[:2],
+                        "prosody": statement_cond[-3:],
+                        "task": task,
+                        "evaluation": evaluation,
+                        "age": age,
+                        "gender": gender,
+                        "participant": participant,
+                        "situation": situation,
+                    })
+                
+                ids_list.append(int(participant[1:]))
+                
+                # Load embeddings
+                if self.use_text and self.embeddings_text_path:
+                    embeddings_text = np.load(os.path.join(self.embeddings_text_path, "statements", f"{statement_cond[:2]}_{situation}_CLS.npy"))
+                    embeddings_text_list.append(embeddings_text)
+                
+                if self.use_text_weighted and self.embeddings_text_path:
+                    embeddings_text_weighted = np.load(os.path.join(self.embeddings_text_path, "text_weighted", f"{context_cond}_{situation}_{statement_cond[:2]}_{situation}_weighted.npy"))
                     
-                    task_counts[task] += 1
-                    sample_count += 1
+                    embeddings_text_weighted_list.append(embeddings_text_weighted)
                     
-                    context = row["Context"]
-                    statement = row["Statement"]
-                    situation = row["Situation"]
-                    evaluation = row["Evaluation_Score"]
-                    age = row["age"]
-                    gender = row["genre"]
-                    fmri_file = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement.npy'
-                    fmri_path = os.path.join(self.fmri_data_path, participant, fmri_file)
-                    
-                    parts = row["Condition_name"].split("_")
-                    context_cond = parts[0]
-                    statement_cond = parts[1]
-                    
-                    fmri = np.load(fmri_path)
- 
-                    fmri_masked = fmri[:, voxel_indices]
-                    fmri_data_list.append(fmri_masked)
-                                        
-                    # Prepare base features
-                    if self.use_base_features:
-                        final_data.append({
-                            "context": context_cond,
-                            "semantic": statement_cond[:2],
-                            "prosody": statement_cond[-3:],
-                            "task": task,
-                            "evaluation": evaluation,
-                            "age": age,
-                            "gender": gender,
-                            "participant": participant,
-                            "situation" : situation,
-                        })
-                    
-                    ids_list.append(int(participant[1:]))
-                    
-                    # Load embeddings
-                    if self.use_text and self.embeddings_text_path:
-                        embeddings_text = np.load(os.path.join(self.embeddings_text_path, "statements", f"{statement_cond[:2]}_{situation}_CLS.npy"))
-                        embeddings_text_list.append(embeddings_text)
-                    
-                    if self.use_text_weighted and self.embeddings_text_path:
-                        embeddings_text_weighted = np.load(os.path.join(self.embeddings_text_path, "text_weighted", f"{context_cond}_{situation}_{statement_cond[:2]}_{situation}_weighted.npy"))
-                        
-                        embeddings_text_weighted_list.append(embeddings_text_weighted)
-                        
-                    if self.use_audio and self.embeddings_audio_path:
-                        embeddings_audio = np.load(os.path.join(self.embeddings_audio_path, f"{statement.replace('.wav', '_layers5-6.npy')}"))
-                        embeddings_audio_list.append(embeddings_audio)
-                    
-                    if self.use_audio_opensmile and self.embeddings_audio_opensmile_path:
-                        embeddings_audio_opensmile = np.load(os.path.join(self.embeddings_audio_opensmile_path, f"{statement.replace('.wav', '_opensmile.npy')}"))
-                        embeddings_audio_opensmile_list.append(embeddings_audio_opensmile)
+                if self.use_audio and self.embeddings_audio_path:
+                    embeddings_audio = np.load(os.path.join(self.embeddings_audio_path, f"{statement.replace('.wav', '_layers5-6.npy')}"))
+                    embeddings_audio_list.append(embeddings_audio)
+                
+                if self.use_audio_opensmile and self.embeddings_audio_opensmile_path:
+                    embeddings_audio_opensmile = np.load(os.path.join(self.embeddings_audio_opensmile_path, f"{statement.replace('.wav', '_opensmile.npy')}"))
+                    embeddings_audio_opensmile_list.append(embeddings_audio_opensmile)
         
-        print(f"Loaded {sample_count} total samples")
+        return final_data, fmri_data_list, ids_list, embeddings_text_list, embeddings_text_weighted_list, embeddings_audio_list, embeddings_audio_opensmile_list, task_counts, sample_count
+
+    def create_data(self):
+        """Loads and processes data into feature DataFrame and fMRI DataFrame using parallel processing."""
+        final_data, fmri_data_list, ids_list = [], [], []
+        embeddings_text_list, embeddings_text_weighted_list = [], []
+        embeddings_audio_list, embeddings_audio_opensmile_list = [], []
+        task_counts = {task: 0 for task in self.included_tasks}
+        total_samples = 0
+        
+        # Parallel processing of participants
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(self.process_participant, self.participant_list))
+        
+        # Aggregate results
+        for result in results:
+            final_data.extend(result[0])
+            fmri_data_list.extend(result[1])
+            ids_list.extend(result[2])
+            embeddings_text_list.extend(result[3])
+            embeddings_text_weighted_list.extend(result[4])
+            embeddings_audio_list.extend(result[5])
+            embeddings_audio_opensmile_list.extend(result[6])
+            for task, count in result[7].items():
+                task_counts[task] += count
+            total_samples += result[8]
+        
+        print(f"Loaded {total_samples} total samples")
         for task, count in task_counts.items():
             print(f"  - {task}: {count} samples")
             
         # Create base DataFrame
-        df = pd.DataFrame(final_data) if self.use_base_features else pd.DataFrame(index=range(sample_count))
+        df = pd.DataFrame(final_data) if self.use_base_features else pd.DataFrame(index=range(total_samples))
         if self.use_base_features:
             df.reset_index(drop=True, inplace=True)
             categorical_cols = ['context', 'semantic', 'prosody', 'task', 'gender', 'participant', 'situation']
@@ -438,19 +467,17 @@ class WholeBrainDataset(Dataset):
                 df_scaled = pd.DataFrame(embeddings_scaled, columns=embeddings_df.columns)
                 df = pd.concat([df, df_scaled], axis=1)
         
-        # Create fMRI DataFrame
+        # Convert to numpy for faster access
         fmri_data = np.vstack(fmri_data_list)
-        ids_list = np.array(ids_list)
-        
-
+        ids_list = np.array(ids_list, dtype=np.int32)
         
         return df, fmri_data, ids_list
     
     def __getitem__(self, index):
-        """Returns a single sample: one row from feature DataFrame and fMRI DataFrame."""
+        """Returns a single sample: one row from feature array and fMRI array."""
         return {
-            "features": self.data.iloc[index].values,
-            "fmri_data": self.fmri_data.iloc[index].values
+            "features": self.data[index],
+            "fmri_data": self.fmri_data[index]
         }
     
     def __len__(self):
