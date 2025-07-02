@@ -192,8 +192,8 @@ def main():
     results_path = args.results_dir if args.results_dir else paths["results_path"][args.data_type]
     
     # Save corrs (mean correlations across folds) in flattened space
-    np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}.npy"), corrs)
-    np.save(os.path.join(results_path, f"folds_correlation_map_flat_{feature_str}.npy"), fold_corrs)
+    np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}_{args.n_splits}.npy"), corrs)
+    np.save(os.path.join(results_path, f"folds_correlation_map_flat_{feature_str}_{args.n_splits}.npy"), fold_corrs)
     ridge_logger.info(f"Saved flattened correlations to {results_path}/correlation_map_flat_{feature_str}.npy")
     
     # Save valphas as 1D array (not as volume)
