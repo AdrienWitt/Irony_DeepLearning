@@ -175,10 +175,6 @@ def main():
         logger=ridge_logger
     )
     
-    # Prepare mask for mapping results to 3D brain space
-    mask_data = resampled_mask.get_fdata()
-    mask_bool = (mask_data > 0).flatten()
-    volume_shape = mask_data.shape
     features_used = []
     if args.use_text:
         features_used.append("text")
@@ -197,36 +193,14 @@ def main():
     
     # Save corrs (mean correlations across folds) in flattened space
     np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}.npy"), corrs)
+    np.save(os.path.join(results_path, f"folds_correlation_map_flat_{feature_str}.npy"), fold_corrs)
     ridge_logger.info(f"Saved flattened correlations to {results_path}/correlation_map_flat_{feature_str}.npy")
-    
-    # Map corrs to 3D brain space and save as .npy and .nii.gz
-    corrs_flat = np.zeros(np.prod(volume_shape))
-    corrs_flat[mask_bool] = corrs
-    corrs_3D = corrs_flat.reshape(volume_shape)
-    corrs_nifti = nib.Nifti1Image(corrs_3D, affine=resampled_mask.affine)
-    np.save(os.path.join(results_path, f"correlation_map_3D_{feature_str}.npy"), corrs_3D)
-    nib.save(corrs_nifti, os.path.join(results_path, f"correlation_map_{feature_str}.nii.gz"))
-    ridge_logger.info(f"Saved 3D correlations to {results_path}/correlation_map_{feature_str}.nii.gz")
     
     # Save valphas as 1D array (not as volume)
     if args.optimize_alpha:
         result_file_valphas = os.path.join(results_path, f"valphas_{feature_str}.npy")
         np.save(result_file_valphas, valphas)
         ridge_logger.info(f"Saved valphas to {result_file_valphas}")
-    
-    # Save fold_corrs (correlations per fold) in flattened space
-    np.save(os.path.join(results_path, f"fold_corrs_full_{feature_str}.npy"), fold_corrs)
-    ridge_logger.info(f"Saved full fold correlations to {results_path}/fold_corrs_full_{feature_str}.npy")
-    
-    # Save fold_corrs mean (averaged across folds) in 3D brain space
-    fold_corrs_mean = np.mean(fold_corrs, axis=1)  # Mean across folds
-    fold_corrs_flat = np.zeros(np.prod(volume_shape))
-    fold_corrs_flat[mask_bool] = fold_corrs_mean
-    fold_corrs_3D = fold_corrs_flat.reshape(volume_shape)
-    fold_corrs_nifti = nib.Nifti1Image(fold_corrs_3D, affine=resampled_mask.affine)
-    np.save(os.path.join(results_path, f"fold_corrs_mean_3D_{feature_str}.npy"), fold_corrs_3D)
-    nib.save(fold_corrs_nifti, os.path.join(results_path, f"fold_corrs_mean_{feature_str}.nii.gz"))
-    ridge_logger.info(f"Saved mean fold correlations to {results_path}/fold_corrs_mean_{feature_str}.nii.gz")
     
     end_time = time.time()
     print("Total r2: %d" % sum(corrs * np.abs(corrs)))
