@@ -14,15 +14,16 @@ import nibabel as nib
 from nilearn.image import resample_to_img
 import logging
 from ridge_cv import ridge_cv
+from nilearn import datasets, image
 
-args = argparse.Namespace(
-    use_audio = False,
-    use_text = False,
-    use_base_features=True,
-    use_text_weighted = True,
-    use_audio_opensmile = True,
-    include_tasks = ["irony", "sarcasm"],
-    use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False, data_type = 'normalized_time')
+# args = argparse.Namespace(
+#     use_audio = False,
+#     use_text = False,
+#     use_base_features=True,
+#     use_text_weighted = True,
+#     use_audio_opensmile = True,
+#     include_tasks = ["irony", "sarcasm"],
+#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False, data_type = 'normalized_time')
 
 
 # Configure logging
@@ -130,7 +131,12 @@ def main():
     participant_list = os.listdir(paths["data_path"])
     #participant_list = participant_list[5:10]  # Limit to 5 participants for testing
 
-    mask = nib.load("ROIs/ROIall_bin.nii")
+    # mask = nib.load("ROIs/ROIall_bin.nii")
+    icbm = datasets.fetch_icbm152_2009()
+    mask_path = icbm['mask']
+    # Load the mask as a Nifti image object
+    mask = image.load_img(mask_path)
+
     exemple_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
     resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
 

@@ -19,10 +19,10 @@ def get_paths():
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "embeddings_audio_opensmile_path": os.path.join(base_path, "embeddings", "audio_opensmile"),
         "results_path": {
-            "mc": os.path.join(base_path, "results", "mc"),
-            "normalized": os.path.join(base_path, "results", "normalized"),
-            "unormalized": os.path.join(base_path, "results", "unormalized"),
-            "normalized_time": os.path.join(base_path, "results", "normalized_time")
+            "mc": os.path.join(base_path, "results_wholebrain_irosar", "mc"),
+            "normalized": os.path.join(base_path, "results_wholebrain_irosar", "normalized"),
+            "unormalized": os.path.join(base_path, "results_wholebrain_irosar", "unormalized"),
+            "normalized_time": os.path.join(base_path, "results_wholebrain_irosar", "normalized_time")
         },
         "group_mask_path": os.path.join(base_path, "data", "fmri", "group_masks", "group_mask", "group_mask_threshold_0.85.nii.gz")
     }
