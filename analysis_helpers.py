@@ -10,7 +10,7 @@ def get_paths():
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
         "fmri_data_path": {
-            "unsmoothed": os.path.join(base_path, "data", "fmri", "unsmoothed"),
+            "unsmoothed": os.path.join(base_path, "data", "fmri", "normalized_time_unsmoothed"),
             "normalized": os.path.join(base_path, "data", "fmri", "normalized"),
             "unormalized": os.path.join(base_path, "data", "fmri", "unormalized"),
             "normalized_time": os.path.join(base_path, "data", "fmri", "normalized_time_flatten")
