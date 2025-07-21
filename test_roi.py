@@ -242,7 +242,6 @@ def process_fmri_files(input_dir, output_dir, num_workers=None):
                 base_name = Path(file).stem
                 if base_name.endswith('.nii'):
                     base_name = Path(base_name).stem
-                base_name = base_name.replace("_masked", "")
                 output_file = out_subdir / f"{base_name}.npy"
                 file_pairs.append((input_file, output_file))
     
@@ -266,9 +265,9 @@ def process_fmri_files(input_dir, output_dir, num_workers=None):
 if __name__ == "__main__":
     try:
         # Example usage
-        input_directory = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time"
-        output_directory = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time_flatten"
-        process_fmri_files(input_directory, output_directory, num_workers=1)
+        input_directory = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time_unsmoothed"
+        output_directory = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time_unsmoothed_flatten"
+        process_fmri_files(input_directory, output_directory, num_workers=20)
     except Exception as e:
         logging.error(f"Script failed: {str(e)}")
     
