@@ -11,8 +11,8 @@ from nilearn.glm.first_level import compute_regressor
 # Define paths
 folder_fmri = r'D:\Preproc_Analyses\data_done'
 folder_audio = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\fMRI_study\Stimuli'
-files_type = ['swrMF']
-output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time_flatten'
+files_type = ['wrMF']
+output_dir_fmri = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\normalized_time_unsmoothed'
 if not os.path.exists(output_dir_fmri):
     os.makedirs(output_dir_fmri)
 output_dir_mask = r'C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks'
@@ -284,7 +284,7 @@ for file_type in files_type:
 
                 # Save fMRI data
                 file = nib.Nifti1Image(weighted_scans, affine, header)
-                filename = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement_masked'
+                filename = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement'
                 nib.save(file, os.path.join(subj_dir, filename + ".nii.gz"))
 
 print("Processing complete.")

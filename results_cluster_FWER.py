@@ -5,33 +5,45 @@ from nilearn import plotting, datasets, image
 from scipy.ndimage import label
 import os
 from scipy.ndimage import gaussian_filter
-
-# Load correlation maps
-r_audio = np.load("results/normalized/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
-r_text = np.load("results/normalized/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
-r_text_audio = np.load("results/normalized/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
-brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.25.nii.gz")
-
-# # Load correlation maps
-# r_audio = np.load("results/unormalized/correlation_map_mean_audio_opensmile_base_iro_sar.npy")
-# r_text = np.load("results/unormalized/correlation_map_mean_text_weighted_base_iro_sar.npy")
-# r_text_audio = np.load("results/unormalized/correlation_map_mean_audio_opensmile_text_weighted_base_iro_sar.npy")
-# brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0..nii.gz")
+from nilearn.image import resample_to_img
 
 
 # # Load correlation maps
-# r_audio = np.load("results_mc_full_embedd/correlation_map_mean_audio_base_sar_iro_pro_sem_tom.npy")
-# r_text = np.load("results_mc_full_embedd/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
-# r_text_audio = np.load("results_mc_full_embedd/correlation_map_mean_audio_text_weighted_base_sar_iro_pro_sem_tom.npy")
-# brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.85.nii.gz")
+# r_audio = np.load("results/normalized/correlation_map_mean_audio_opensmile_base_sar_iro_pro_sem_tom.npy")
+# r_text = np.load("results/normalized/correlation_map_mean_text_weighted_base_sar_iro_pro_sem_tom.npy")
+# r_text_audio = np.load("results/normalized/correlation_map_mean_audio_opensmile_text_weighted_base_sar_iro_pro_sem_tom.npy")
+# brain_mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\Irony_DeepLearning\data\fmri\group_masks\group_mask\group_mask_threshold_0.25.nii.gz")
 
-affine = brain_mask.affine
+
+r_text_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_text_weighted_base_5.npy")
+r_text = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_text_weighted_base_5.npy")
+r_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_base_5.npy")
+
+
+icbm = datasets.fetch_icbm152_2009()
+mask_path = icbm['mask']
+brain_mask = image.load_img(mask_path)
+
+
+example_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
+resampled_mask = resample_to_img(brain_mask, example_data, interpolation='nearest')
+affine = example_data.affine
+brain_mask = resampled_mask.get_fdata() > 0
+
+
+r_text_audio_3D = np.zeros(brain_mask.shape)
+r_text_3D = np.zeros(brain_mask.shape)
+r_audio_3D = np.zeros(brain_mask.shape)
+
+r_text_audio_3D[brain_mask] = r_text_audio
+r_text_3D[brain_mask] = r_text
+r_audio_3D[brain_mask] = r_audio
+
 
 # Create NIfTI images
-r_audio_nifti = nib.Nifti1Image(r_audio, affine)
-r_text_nifti = nib.Nifti1Image(r_text, affine)
-r_text_audio_nifti = nib.Nifti1Image(r_text_audio, affine)
-brain_mask = brain_mask.get_fdata() > 0
+r_audio_nifti = nib.Nifti1Image(r_audio_3D, affine)
+r_text_nifti = nib.Nifti1Image(r_text_3D, affine)
+r_text_audio_nifti = nib.Nifti1Image(r_text_audio_3D, affine)
 
 
 # Smooth and apply brain mask

@@ -10,7 +10,7 @@ def get_paths():
     paths = {
         "data_path": os.path.join(base_path, "data", "behavioral"),
         "fmri_data_path": {
-            "mc": os.path.join(base_path, "data", "fmri", "mc"),
+            "unsmoothed": os.path.join(base_path, "data", "fmri", "unsmoothed"),
             "normalized": os.path.join(base_path, "data", "fmri", "normalized"),
             "unormalized": os.path.join(base_path, "data", "fmri", "unormalized"),
             "normalized_time": os.path.join(base_path, "data", "fmri", "normalized_time_flatten")
@@ -19,7 +19,7 @@ def get_paths():
         "embeddings_audio_path": os.path.join(base_path, "embeddings", "audio"),
         "embeddings_audio_opensmile_path": os.path.join(base_path, "embeddings", "audio_opensmile"),
         "results_path": {
-            "mc": os.path.join(base_path, "results_wholebrain_irosar", "mc"),
+            "unsmoothed": os.path.join(base_path, "results_wholebrain_irosar", "unsmoothed"),
             "normalized": os.path.join(base_path, "results_wholebrain_irosar", "normalized"),
             "unormalized": os.path.join(base_path, "results_wholebrain_irosar", "unormalized"),
             "normalized_time": os.path.join(base_path, "results_wholebrain_irosar", "normalized_time")

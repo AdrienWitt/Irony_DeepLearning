@@ -57,8 +57,8 @@ def parse_arguments():
                                help="Explained variance threshold for PCA (default: 0.60).")
     dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
                                help="List of tasks to include (default: all available tasks).")
-    dataset_group.add_argument("--data_type", type=str, choices=["mc", "normalized", "unormalized", "normalized_time"], default="unormalized",
-                               help="Type of fMRI data to use: mc (mean-centered), normalized, normalized_time, or unormalized (default: unormalized).")
+    dataset_group.add_argument("--data_type", type=str, choices=["unsmoothed", "normalized", "unormalized", "normalized_time"], default="unormalized",
+                               help="Type of fMRI data to use: unsmoothed, normalized, normalized_time, or unormalized (default: unormalized).")
     
     # Analysis-related arguments
     analysis_group = parser.add_argument_group("Analysis Arguments")
@@ -151,7 +151,7 @@ def main():
         if not os.path.exists(valphas_path):
             raise ValueError("Must provide a valid --precomputed_valphas path when --optimize_alpha is False.")
         valphas = np.load(valphas_path)
-        ridge_logger.info("Using precomputed valphas")
+        ridge_logger.info(f"Using precomputed valphas at {valphas_path}")
     else:
         valphas = None
 
