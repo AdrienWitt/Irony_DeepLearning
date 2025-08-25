@@ -183,6 +183,98 @@ def ridge_cv(stim_df, resp, alphas, participant_ids, nboots=50, n_splits=50,
     
     return wt, corrs, valphas, fold_corrs, bootstrap_corrs
 
+def noise_ceiling(raw_df, resp, participant_ids, match_columns, valphas, n_splits=5, normalize_resp=True, n_jobs=1, logger=None):
+    """
+    Computes the noise ceiling using GroupKFold cross-validation with ridge regression.
+    For each voxel, uses the average response of other participants (from the training set) under
+    matching conditions as the predictor, fits a ridge regression model with precomputed alphas,
+    and correlates predicted test set responses with actual responses.
+
+    Parameters
+    ----------
+    raw_df : pandas.DataFrame, shape (T, ...)
+        DataFrame containing metadata (e.g., context, semantic, prosody, task, situation).
+    resp : array_like, shape (T, M)
+        fMRI responses with T time points and M voxels.
+    participant_ids : array_like, shape (T,)
+        Participant IDs for each time point.
+    match_columns : list of str
+        Columns in raw_df to match conditions (e.g., ['context', 'semantic', 'prosody', 'task', 'situation']).
+    valphas : array_like, shape (M,)
+        Precomputed ridge regression alpha values per voxel.
+    n_splits : int, default 50
+        Number of folds for GroupKFold cross-validation (capped at number of unique participants).
+    normalize_resp : boolean, default True
+        Z-score responses using zs function.
+    n_jobs : int, default 1
+        Number of parallel jobs.
+    logger : logging.Logger, default None
+        Logger for tracking progress.
+
+    Returns
+    -------
+    mean_noise_ceiling : array_like, shape (M,)
+        Mean correlation across folds for each voxel.
+    fold_noise_ceilings : array_like, shape (M, n_splits)
+        Correlations per voxel and fold.
+    """
+    if raw_df.shape[0] != resp.shape[0]:
+        raise ValueError("raw_df and resp must have same number of time points.")
+    if not all(col in raw_df.columns for col in match_columns):
+        raise ValueError("All match_columns must be present in raw_df.")
+    if participant_ids.shape[0] != resp.shape[0]:
+        raise ValueError("participant_ids must have same length as resp rows.")
+    if valphas.shape[0] != resp.shape[1]:
+        raise ValueError("valphas must have same length as number of voxels.")
+
+    resp = zs(resp) if normalize_resp else resp
+
+    unique_participants = np.unique(participant_ids)
+    n_participants = len(unique_participants)
+    n_splits = min(n_splits, n_participants)
+
+    logger = logger or logging.getLogger("noise_ceiling")
+    logger.info("Computing noise ceiling with %d-fold GroupKFold CV across %d voxels using ridge regression...", n_splits, resp.shape[1])
+
+    def _compute_fold_noise_ceiling(fold_idx, train_idx, test_idx):
+        logger.info(f"Processing noise ceiling fold {fold_idx+1}/{n_splits}...")
+        corrs = np.zeros(resp.shape[1])
+        train_X = np.zeros((len(train_idx), resp.shape[1]))
+        test_X = np.zeros((len(test_idx), resp.shape[1]))
+
+        for i, idx_i in enumerate(train_idx):
+            mask = np.ones(len(train_idx), dtype=bool)
+            for col in match_columns:
+                mask &= (raw_df.iloc[train_idx][col] == raw_df.iloc[idx_i][col]).values
+            matching_idx = train_idx[mask]
+            train_X[i] = np.nanmean(resp[matching_idx], axis=0) if len(matching_idx) > 0 else np.full(resp.shape[1], np.nan)
+
+        for i, idx_i in enumerate(test_idx):
+            mask = np.ones(len(train_idx), dtype=bool)
+            for col in match_columns:
+                mask &= (raw_df.iloc[train_idx][col] == raw_df.iloc[idx_i][col]).values
+            matching_idx = train_idx[mask]
+            test_X[i] = np.nanmean(resp[matching_idx], axis=0) if len(matching_idx) > 0 else np.full(resp.shape[1], np.nan)
+
+        corrs = ridge_corr_pred(train_X, test_X, resp[train_idx], resp[test_idx], valphas,
+                                normalpha=False, singcutoff=1e-10, use_corr=True, logger=logger)
+
+        return corrs
+
+    gkf = GroupKFold(n_splits=n_splits)
+    fold_results = Parallel(n_jobs=n_jobs)(
+        delayed(_compute_fold_noise_ceiling)(fold_idx, train_idx, test_idx)
+        for fold_idx, (train_idx, test_idx) in enumerate(gkf.split(resp, resp, groups=participant_ids))
+    )
+
+    fold_noise_ceilings = np.stack(fold_results, axis=1) if fold_results else np.array([])
+    mean_noise_ceiling = np.nanmean(fold_noise_ceilings, axis=1) if fold_noise_ceilings.size > 0 else np.array([])
+
+    logger.info("Completed noise ceiling: mean correlation across voxels=%0.5f, max=%0.5f",
+                np.nanmean(mean_noise_ceiling), np.nanmax(mean_noise_ceiling))
+
+    return mean_noise_ceiling, fold_noise_ceilings
+
 
 def ridge(stim, resp, alpha, singcutoff=1e-10, normalpha=False, logger=ridge_logger):
     """Uses ridge regression to find a linear transformation of [stim] that approximates

@@ -1,181 +1,112 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr  9 12:23:20 2025
-
-@author: adywi
-"""
-
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.model_selection import KFold
-from scipy.stats import pearsonr
-from joblib import Parallel, delayed
-import analysis_helpers 
 import os
+import time
+import numpy as np
+import analysis_helpers
+import logging
+from ridge_cv import noise_ceiling_check
+from nilearn.image import resample_to_img
+from nilearn import datasets, image
+import nibabel as nib
+import dataset
 import argparse
+import logging
+import pandas as pd
 
-def get_voxel_values(voxel, base_data, data):
-    voxel_values = []        
-    for item in base_data:
-        voxel_values.append(item["fmri_data"][voxel])
-    data["fmri_value"] = voxel_values
-    return data
-
-def set_data(base_data):
-    final_data = []
-    for item in base_data:
-        fmri_value = None
-        participant = item["participant"]
-        context = item["context_condition"]
-        semantic = item["statement_condition"][:2]
-        prosody = item["statement_condition"][-3:]
-        task = item["task"]
-        evaluation = item["evaluation"]
-        situation = item["situation"]
-        gender = item["gender"]  # Fixed comma here too
-        age = item["age"]      # Removed comma
-
-        final_data.append({
-            "context": context, "semantic": semantic, "prosody": prosody, 
-            "task": task, "evaluation": evaluation, "fmri_value": fmri_value, 
-            "situation": situation, "participant": participant, "gender": gender,
-            "age": age
-        })  
-
-    df = pd.DataFrame(final_data)
-    df.reset_index(drop=True, inplace=True)
-    return df
-
-
-def voxel_noise_ceiling_stacked(voxel, database, alpha):
-    base_data = database.base_data
-    data = set_data(base_data)
-    data_voxel = get_voxel_values(voxel, base_data, data)
-    participant_correlations = []
-    
-    for participant in data_voxel["participant"].unique():
-        participant_data = data_voxel[data_voxel["participant"] == participant].copy()
-        other_participants_data = data_voxel[data_voxel["participant"] != participant]
-        
-        X_stacked = []
-        y_stacked = []
-        feature_data = []  # To store raw features before stacking
-        
-        for idx, row in participant_data.iterrows():
-            condition_match = other_participants_data[
-                (other_participants_data["prosody"] == row["prosody"]) &
-                (other_participants_data["context"] == row["context"]) &
-                (other_participants_data["semantic"] == row["semantic"]) &
-                (other_participants_data["task"] == row["task"]) &
-                (other_participants_data["situation"] == row["situation"])
-            ]
-            
-            if len(condition_match) == 0:
-                continue
-            
-            # Extract fMRI values from other participants
-            X_fmri_others = condition_match["fmri_value"].values.reshape(-1, 1)
-            
-            # Keep raw features (not dummified yet)
-            base_features_df = condition_match[['context', 'semantic', 'prosody', 'task', 'participant', 'evaluation', 'gender', 'age']].copy()
-            
-            # Scale evaluation (still numeric, so we can do this now)
-            base_features_df['evaluation'] = base_features_df['evaluation'].fillna(base_features_df['evaluation'].median())
-            if base_features_df['evaluation'].max() != base_features_df['evaluation'].min():
-                base_features_df['evaluation'] = (base_features_df['evaluation'] - base_features_df['evaluation'].min()) / \
-                                                (base_features_df['evaluation'].max() - base_features_df['evaluation'].min())
-            
-            # Scale age
-            from sklearn.preprocessing import StandardScaler
-            scaler = StandardScaler()
-            base_features_df['age'] = scaler.fit_transform(base_features_df[['age']])
-            
-            # Store raw features and fMRI values together
-            feature_data.append(base_features_df)
-            X_stacked.append(X_fmri_others)
-            y_row = np.full(len(X_fmri_others), row["fmri_value"])
-            y_stacked.append(y_row)
-        
-        if not X_stacked:
-            participant_correlations.append(0)
-            continue
-        
-        # Stack fMRI values
-        X_fmri_stacked = np.vstack(X_stacked)
-        y = np.hstack(y_stacked)
-        
-        # Combine all feature data into one DataFrame
-        all_features_df = pd.concat(feature_data, axis=0, ignore_index=True)
-        
-        # Now apply dummy encoding to the full stacked feature set
-        categorical_cols = ['context', 'semantic', 'prosody', 'task', 'participant', 'gender']
-        all_features_df = pd.get_dummies(all_features_df, columns=categorical_cols, drop_first=True, dtype=int)
-        
-        # Combine fMRI values with the dummified features
-        X = np.hstack([X_fmri_stacked, all_features_df.values])
-        
-        # Filter out zero targets
-        valid_idx = y != 0
-        X, y = X[valid_idx], y[valid_idx]
-        
-        alpha = (alpha * X.shape[1])/79
-        
-        if len(X) < 5:
-            participant_correlations.append(0)
-            continue
-        
-        # Cross-validation
-        kf = KFold(n_splits=5, shuffle=True, random_state=42)
-        fold_corrs = []
-        for train_idx, test_idx in kf.split(X):
-            X_train, X_test = X[train_idx], X[test_idx]
-            y_train, y_test = y[train_idx], y[test_idx]
-            model = Ridge(alpha=alpha)
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            corr = pearsonr(y_test, y_pred)[0] if np.std(y_test) > 0 else 0
-            fold_corrs.append(corr)
-        
-        participant_correlations.append(np.mean(fold_corrs))
-    
-    mean_corr = np.mean(participant_correlations)
-    return voxel, mean_corr
-
-
-args = argparse.Namespace(
-    img_size=[75, 92, 77],
-    use_audio = False,
-    use_text = False,
-    use_text_weighted = False,
-    use_context = False,
-    use_base_features=True,
-    use_umap = False,
-    use_pca=False, num_jobs = 5, alpha = 0.01, pca_threshold = 0.5)
-
-# Main execution (same args as above)
-paths = analysis_helpers.get_paths()
-participant_list = os.listdir(paths["data_path"])
-database = analysis_helpers.load_dataset(args, paths, participant_list)
-
-img_size = (79, 95, 79)
-voxel_list = list(np.ndindex(img_size))
-
-print("Computing stacked noise ceiling...")
-correlation_map = np.zeros(img_size)
-
-results = Parallel(n_jobs=args.num_jobs, verbose=1)(
-    delayed(voxel_noise_ceiling_stacked)(voxel, database, args.alpha)
-    for voxel in voxel_list
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
 )
+ridge_logger = logging.getLogger("ridge_corr")
 
-for voxel, corr in results:
-    correlation_map[voxel] = corr
 
-output_file = os.path.join(paths["results_path"], "noise_ceiling_stacked_map.npy")
-np.save(output_file, correlation_map)
-print(f"Saved stacked noise ceiling to '{output_file}'")
+def load_dataset(args, paths, participant_list, mask):
+    """Loads the dataset using parsed arguments."""
 
-valid_corrs = correlation_map[correlation_map != 0]
-print(f"Mean noise ceiling correlation: {np.mean(valid_corrs):.4f}")
-print(f"Std noise ceiling correlation: {np.std(valid_corrs):.4f}")
+    dataset_args = {
+        "data_path": paths["data_path"],
+        "fmri_data_path": paths["fmri_data_path"][args.data_type],  # pick based on type
+        "embeddings_text_path": paths["embeddings_text_path"],
+        "embeddings_audio_path": paths["embeddings_audio_path"],
+        "embeddings_audio_opensmile_path": paths["embeddings_audio_opensmile_path"],
+        "use_base_features": args.use_base_features,
+        "use_text": args.use_text,
+        "use_audio": args.use_audio,
+        "use_audio_opensmile": args.use_audio_opensmile,
+        "use_text_weighted": args.use_text_weighted,
+        "pca_threshold": args.pca_threshold,
+        "use_pca": args.use_pca,
+        "use_umap": args.use_umap,
+        "included_tasks": args.include_tasks,
+    }
+
+    # Instantiate dataset (this will run __init__ + create_data automatically)
+    dataset_obj = dataset.WholeBrainDatasetWithRaw(
+        participant_list=participant_list,
+        mask=mask,
+        **dataset_args
+    )
+
+    # Return everything
+    return dataset_obj.data, dataset_obj.fmri_data, dataset_obj.ids_list, dataset_obj.raw_df
+
+
+def main():
+    start_time = time.time()
+
+    # Load paths and participants
+    paths = analysis_helpers.get_paths()
+    participant_list = os.listdir(paths["data_path"])
+
+    # Load mask
+    icbm = datasets.fetch_icbm152_2009()
+    mask_path = icbm['mask']
+    mask = image.load_img(mask_path)
+    exemple_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
+    resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
+
+    match_columns = ['context', 'semantic', 'prosody', 'task', 'situation']    
+
+    args = argparse.Namespace(
+        use_audio = False,
+        use_text = False,
+        use_base_features=True,
+        use_text_weighted = True,
+        use_audio_opensmile = True,
+        include_tasks = ["irony", "sarcasm"],
+        use_pca=True, num_jobs = 50, pca_threshold = 0.55, use_umap = False, data_type = 'normalized_time')
+    
+    stim_df, resp, ids_list, raw_df = load_dataset(args, paths, participant_list, resampled_mask)
+    
+    # Handle precomputed valphas
+    valphas_path = os.path.join( "results_wholebrain_irosar/normalized_time", "valphas_audio_opensmile_text_weighted_base.npy")
+    valphas = np.load(valphas_path)
+    
+    # Compute noise ceiling
+    mean_noise_ceiling, fold_noise_ceilings = noise_ceiling_check(
+        raw_df=raw_df,
+        resp=resp,
+        participant_ids=ids_list,
+        match_columns=match_columns,
+        valphas=valphas,
+        n_splits=5,
+        normalize_resp=True,
+        n_jobs=args.num_jobs,
+        logger=ridge_logger
+    )
+    
+   # Save results
+    output_dir = os.path.join("results_wholebrain_irosar", args.data_type)
+    os.makedirs(output_dir, exist_ok=True)
+    np.save(os.path.join(output_dir, "mean_noise_ceiling.npy"), mean_noise_ceiling)
+    np.save(os.path.join(output_dir, "fold_noise_ceilings.npy"), fold_noise_ceilings)
+    ridge_logger.info(f"Saved noise ceiling results to {output_dir}")
+
+    end_time = time.time()
+    ridge_logger.info(f"Total execution time: {end_time - start_time:.2f} seconds")
+ 
+    ridge_logger.info(f"Loaded data: features_df {raw_df.shape}, resp {resp.shape}, raw_df {raw_df.shape}")
+
+if __name__ == "__main__":
+    main()
