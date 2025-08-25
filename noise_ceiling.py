@@ -3,7 +3,7 @@ import time
 import numpy as np
 import analysis_helpers
 import logging
-from ridge_cv import noise_ceiling_check
+from ridge_cv import noise_ceiling
 from nilearn.image import resample_to_img
 from nilearn import datasets, image
 import nibabel as nib
@@ -84,7 +84,7 @@ def main():
     valphas = np.load(valphas_path)
     
     # Compute noise ceiling
-    mean_noise_ceiling, fold_noise_ceilings = noise_ceiling_check(
+    mean_noise_ceiling, fold_noise_ceilings = noise_ceiling(
         raw_df=raw_df,
         resp=resp,
         participant_ids=ids_list,
