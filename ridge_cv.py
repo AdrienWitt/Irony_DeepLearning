@@ -276,6 +276,116 @@ def noise_ceiling(raw_df, resp, participant_ids, match_columns, valphas, n_split
     return mean_noise_ceiling, fold_noise_ceilings
 
 
+def noise_ceiling_corr(raw_df, resp, participant_ids, match_columns, normalize_resp=True, n_jobs=1, logger=None):
+    """
+    Computes the noise ceiling by calculating the Pearson correlation between each participant's
+    fMRI response for a voxel and the mean response of other participants for that voxel under
+    matching conditions. Concatenates predictions across all participants and computes the overall
+    correlation per voxel.
+
+    Parameters
+    ----------
+    raw_df : pandas.DataFrame, shape (T, ...)
+        DataFrame containing metadata (e.g., context, semantic, prosody, task, situation).
+    resp : array_like, shape (T, M)
+        fMRI responses with T time points and M voxels.
+    participant_ids : array_like, shape (T,)
+        Participant IDs for each time point.
+    match_columns : list of str
+        Columns in raw_df to match conditions (e.g., ['context', 'semantic', 'prosody', 'task', 'situation']).
+    normalize_resp : boolean, default True
+        Z-score responses using zs function.
+    n_jobs : int, default 1
+        Number of parallel jobs for voxel-wise correlation.
+    logger : logging.Logger, default None
+        Logger for tracking progress.
+
+    Returns
+    -------
+    noise_ceiling : array_like, shape (M,)
+        Pearson correlation for each voxel across all participants' observations.
+    """
+    if raw_df.shape[0] != resp.shape[0]:
+        raise ValueError("raw_df and resp must have same number of time points.")
+    if not all(col in raw_df.columns for col in match_columns):
+        raise ValueError("All match_columns must be present in raw_df.")
+    if participant_ids.shape[0] != resp.shape[0]:
+        raise ValueError("participant_ids must have same length as resp rows.")
+
+    resp = zs(resp) if normalize_resp else resp
+
+    logger = logger or logging.getLogger("noise_ceiling")
+    logger.info("Computing noise ceiling with Pearson correlation across %d voxels...", resp.shape[1])
+
+    # Check condition matches to ensure one time point per participant per condition
+    def _check_condition_matches():
+        logger.info("Checking condition matches across all data...")
+        condition_groups = raw_df.groupby(match_columns).size().reset_index(name='count')
+        for _, condition in condition_groups.iterrows():
+            condition_mask = np.ones(len(raw_df), dtype=bool)
+            for col in match_columns:
+                condition_mask &= (raw_df[col] == condition[col]).values
+            matching_indices = np.where(condition_mask)[0]
+            matching_participants = participant_ids[matching_indices]
+            participant_counts = pd.Series(matching_participants).value_counts()
+            n_unique_participants = len(participant_counts)
+            one_per_participant = (participant_counts == 1).all()
+            if one_per_participant:
+                logger.info(f"Condition {condition[match_columns].to_dict()}: "
+                           f"{n_unique_participants}/{len(np.unique(participant_ids))} participants have exactly one time point.")
+            else:
+                logger.warning(f"Condition {condition[match_columns].to_dict()}: "
+                              f"Some participants have multiple or zero time points: {participant_counts.to_dict()}")
+
+    _check_condition_matches()
+
+    def _compute_voxel_correlation(v):
+        """Compute Pearson correlation for voxel v across all participants."""
+        x_all, y_all = [], []
+        for pid in np.unique(participant_ids):
+            # Get indices for the current participant
+            pid_idx = np.where(participant_ids == pid)[0]
+            # Get indices for other participants
+            other_idx = np.where(participant_ids != pid)[0]
+            
+            x_pid, y_pid = [], []
+            for idx in pid_idx:
+                # Find matching indices from other participants
+                mask = np.ones(len(other_idx), dtype=bool)
+                for col in match_columns:
+                    mask &= (raw_df.iloc[other_idx][col] == raw_df.iloc[idx][col]).values
+                matching_idx = other_idx[mask]
+                if len(matching_idx) > 0:
+                    # Compute mean response for voxel v from other participants
+                    x_pid.append(np.nanmean(resp[matching_idx, v]))
+                    y_pid.append(resp[idx, v])
+                else:
+                    x_pid.append(np.nan)
+                    y_pid.append(resp[idx, v])
+            
+            x_all.extend(x_pid)
+            y_all.extend(y_pid)
+        
+        # Convert to arrays and remove NaN pairs
+        x_all = np.array(x_all)
+        y_all = np.array(y_all)
+        valid_mask = ~(np.isnan(x_all) | np.isnan(y_all))
+        if np.sum(valid_mask) < 2:
+            return np.nan
+        corr, _ = pearsonr(x_all[valid_mask], y_all[valid_mask])
+        return corr
+
+    logger.info("Computing correlations for %d voxels using %d jobs...", resp.shape[1], n_jobs)
+    noise_ceiling = Parallel(n_jobs=n_jobs)(
+        delayed(_compute_voxel_correlation)(v) for v in range(resp.shape[1])
+    )
+    noise_ceiling = np.array(noise_ceiling)
+
+    logger.info("Completed noise ceiling: mean correlation across voxels=%0.5f, max=%0.5f",
+                np.nanmean(noise_ceiling), np.nanmax(noise_ceiling))
+
+    return noise_ceiling
+
 def ridge(stim, resp, alpha, singcutoff=1e-10, normalpha=False, logger=ridge_logger):
     """Uses ridge regression to find a linear transformation of [stim] that approximates
     [resp]. The regularization parameter is [alpha].
