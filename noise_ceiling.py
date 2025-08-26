@@ -173,7 +173,7 @@ def main():
         match_columns=match_columns,
         normalize_resp=True,
         logger=logger,
-        n_jobs = 32
+        n_jobs = 50
     )
 
     # Save results
