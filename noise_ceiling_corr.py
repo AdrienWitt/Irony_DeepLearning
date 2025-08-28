@@ -7,6 +7,7 @@ from nilearn.image import resample_to_img
 from nilearn import datasets, image
 import nibabel as nib
 import dataset
+import argparse
 import pandas as pd
 from scipy.stats import pearsonr
 from joblib import Parallel, delayed
@@ -51,23 +52,7 @@ def load_dataset(args, paths, participant_list, mask):
 
 zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
 
-def noise_ceiling_corr(raw_df, resp, participant_ids, match_columns, normalize_resp=True, n_jobs=1, logger=None, voxel_indices=None):
-    """
-    Compute noise ceiling correlation for specified voxels or all voxels.
-    
-    Args:
-        raw_df (pd.DataFrame): DataFrame with condition information.
-        resp (np.ndarray): fMRI response data (time points x voxels).
-        participant_ids (np.ndarray): Array of participant IDs.
-        match_columns (list): Columns in raw_df to match conditions.
-        normalize_resp (bool): Whether to z-score the response data.
-        n_jobs (int): Number of parallel jobs.
-        logger: Logger instance.
-        voxel_indices (list or int, optional): Specific voxel indices to process. If None, process all voxels.
-    
-    Returns:
-        np.ndarray: Noise ceiling correlations for specified or all voxels.
-    """
+def noise_ceiling_corr(raw_df, resp, participant_ids, match_columns, normalize_resp=True, n_jobs=1, logger=None):
     if raw_df.shape[0] != resp.shape[0]:
         raise ValueError("raw_df and resp must have same number of time points.")
     if not all(col in raw_df.columns for col in match_columns):
@@ -78,21 +63,7 @@ def noise_ceiling_corr(raw_df, resp, participant_ids, match_columns, normalize_r
     resp = zs(resp) if normalize_resp else resp
 
     logger = logger or logging.getLogger("noise_ceiling")
-    logger.info("Computing noise ceiling with Pearson correlation...")
-
-    # Determine voxels to process
-    if voxel_indices is None:
-        voxel_indices = range(resp.shape[1])
-    elif isinstance(voxel_indices, int):
-        voxel_indices = [voxel_indices]
-    elif not isinstance(voxel_indices, (list, np.ndarray)):
-        raise ValueError("voxel_indices must be an integer, list, or numpy array.")
-    else:
-        voxel_indices = np.array(voxel_indices)
-        if not all(0 <= v < resp.shape[1] for v in voxel_indices):
-            raise ValueError("All voxel indices must be within valid range.")
-
-    logger.info("Processing %d voxels...", len(voxel_indices))
+    logger.info("Computing noise ceiling with Pearson correlation across %d voxels...", resp.shape[1])
 
     # Check condition matches to ensure one time point per participant per condition
     def _check_condition_matches():
@@ -152,20 +123,20 @@ def noise_ceiling_corr(raw_df, resp, participant_ids, match_columns, normalize_r
         corr, _ = pearsonr(x_all[valid_mask], y_all[valid_mask])
         return corr
 
-    logger.info("Computing correlations for %d voxels using %d jobs...", len(voxel_indices), n_jobs)
+    logger.info("Computing correlations for %d voxels using %d jobs...", resp.shape[1], n_jobs)
     # Wrap the voxel range with tqdm for progress tracking
     if tqdm is not None and n_jobs == 1:
         # For single-threaded execution, use tqdm directly
-        noise_ceiling = [_compute_voxel_correlation(v) for v in tqdm(voxel_indices, desc="Computing voxel correlations")]
+        noise_ceiling = [_compute_voxel_correlation(v) for v in tqdm(range(resp.shape[1]), desc="Computing voxel correlations")]
     else:
         # For parallel execution, use joblib with tqdm
         if tqdm is not None:
             noise_ceiling = Parallel(n_jobs=n_jobs)(
-                delayed(_compute_voxel_correlation)(v) for v in tqdm(voxel_indices, desc="Computing voxel correlations")
+                delayed(_compute_voxel_correlation)(v) for v in tqdm(range(resp.shape[1]), desc="Computing voxel correlations")
             )
         else:
             noise_ceiling = Parallel(n_jobs=n_jobs)(
-                delayed(_compute_voxel_correlation)(v) for v in voxel_indices
+                delayed(_compute_voxel_correlation)(v) for v in range(resp.shape[1])
             )
     noise_ceiling = np.array(noise_ceiling)
 
@@ -179,7 +150,7 @@ def main():
 
     # Load paths and participants
     paths = analysis_helpers.get_paths()
-    participant_list = os.listdir(paths["data_path"])
+    participant_list = os.listdir(paths["data_path"])[0:5]
 
     # Load mask
     icbm = datasets.fetch_icbm152_2009()
@@ -190,43 +161,19 @@ def main():
 
     match_columns = ['context', 'semantic', 'prosody', 'task', 'situation']    
 
-    # Define arguments directly
-    class Args:
-        use_audio = False
-        use_text = False
-        use_base_features = True
-        use_text_weighted = True
-        use_audio_opensmile = True
-        include_tasks = ["irony", "sarcasm"]
-        use_pca = True
-        pca_threshold = 0.55
-        use_umap = False
-        data_type = 'normalized_time'
-        output_dir = "results"
-        voxel_indices = 'max'  # Options: None, int (e.g., 42), list (e.g., [0, 1, 2]), or 'max'
-
-    args = Args()
-
-    # Load dataset
+    args = argparse.Namespace(
+        use_audio = False,
+        use_text = False,
+        use_base_features=True,
+        use_text_weighted = True,
+        use_audio_opensmile = True,
+        include_tasks = ["irony", "sarcasm"],
+        use_pca=True, pca_threshold = 0.55, use_umap = False, data_type = 'normalized_time',
+        output_dir = "results"  # Added to avoid AttributeError
+    )
+    
     stim_df, resp, ids_list, raw_df = load_dataset(args, paths, participant_list, resampled_mask)
-
-    # Handle voxel_indices
-    voxel_indices = None
-    if args.voxel_indices:
-        if args.voxel_indices == 'max':
-            # Load correlation map and find voxel with maximum correlation
-            r_text_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_text_weighted_base_5.npy")
-            voxel_indices = [np.argmax(r_text_audio)]
-            logger.info(f"Selected voxel with maximum correlation: index {voxel_indices[0]}")
-        elif isinstance(args.voxel_indices, int):
-            voxel_indices = [args.voxel_indices]
-            logger.info(f"Selected voxel index: {voxel_indices}")
-        elif isinstance(args.voxel_indices, (list, np.ndarray)):
-            voxel_indices = args.voxel_indices
-            logger.info(f"Selected voxel indices: {voxel_indices}")
-        else:
-            raise ValueError("voxel_indices must be None, 'max', an integer, or a list/array of integers.")
-
+    
     # Compute noise ceiling
     noise_ceiling = noise_ceiling_corr(
         raw_df=raw_df,
@@ -235,17 +182,13 @@ def main():
         match_columns=match_columns,
         normalize_resp=True,
         logger=logger,
-        voxel_indices=voxel_indices
+        n_jobs = 100
     )
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
-    output_file = "noise_ceiling_corr"
-    if voxel_indices is not None:
-        output_file += f"_voxels_{'_'.join(map(str, voxel_indices))}"
-    output_file += ".npy"
-    np.save(os.path.join(args.output_dir, output_file), noise_ceiling)
-    logger.info(f"Saved noise ceiling correlations to {os.path.join(args.output_dir, output_file)}")
+    np.save(os.path.join(args.output_dir, "noise_ceiling_corr.npy"), noise_ceiling)
+    logger.info(f"Saved noise ceiling correlations to {args.output_dir}")
 
     end_time = time.time()
     logger.info(f"Total execution time: {end_time - start_time:.2f} seconds")

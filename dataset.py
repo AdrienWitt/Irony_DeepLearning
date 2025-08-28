@@ -483,55 +483,6 @@ class WholeBrainDataset(Dataset):
         """Returns the total number of samples."""
         return len(self.data)
     
-class WholeBrainDatasetWithRaw(WholeBrainDataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.data, self.fmri_data, self.ids_list, self.raw_df = self.create_data()
-    
-    def create_data(self):
-        # Call parent implementation to get processed values
-        final_data, fmri_data_list, ids_list = [], [], []
-        embeddings_text_list, embeddings_text_weighted_list = [], []
-        embeddings_audio_list, embeddings_audio_opensmile_list = [], []
-        task_counts = {task: 0 for task in self.included_tasks}
-        total_samples = 0
-
-        # Parallel processing from parent
-        with ThreadPoolExecutor() as executor:
-            results = list(executor.map(self.process_participant, self.participant_list))
-
-        for result in results:
-            final_data.extend(result[0])
-            fmri_data_list.extend(result[1])
-            ids_list.extend(result[2])
-            embeddings_text_list.extend(result[3])
-            embeddings_text_weighted_list.extend(result[4])
-            embeddings_audio_list.extend(result[5])
-            embeddings_audio_opensmile_list.extend(result[6])
-            for task, count in result[7].items():
-                task_counts[task] += count
-            total_samples += result[8]
-
-        # ✅ raw DataFrame with all human-readable identifiers
-        raw_df = pd.DataFrame(final_data)
-
-        # ---- everything below is the same as parent create_data ----
-        df = pd.DataFrame(final_data) if self.use_base_features else pd.DataFrame(index=range(total_samples))
-        if self.use_base_features:
-            df.reset_index(drop=True, inplace=True)
-            categorical_cols = ['context', 'semantic', 'prosody', 'task', 'gender', 'participant']
-            df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
-            df['evaluation'] = df['evaluation'].fillna(df['evaluation'].median())
-            df['evaluation'] = (df['evaluation'] - df['evaluation'].min()) / (df['evaluation'].max() - df['evaluation'].min())
-            df['age'] = self.scaler.fit_transform(df[['age']])
-
-        # … embeddings handling (same as your original class) …
-
-        fmri_data = np.vstack(fmri_data_list)
-        ids_list = np.array(ids_list, dtype=np.int32)
-
-        # ✅ Return raw_df as an extra output
-        return df, fmri_data, ids_list, raw_df
 
 class WholeBrainDatasetWithRaw(WholeBrainDataset):
     def __init__(self, *args, **kwargs):
