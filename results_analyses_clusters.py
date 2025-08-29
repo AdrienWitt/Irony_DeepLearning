@@ -1,254 +1,225 @@
-import os
-import time
 import numpy as np
-import analysis_helpers
-import logging
-from nilearn.image import resample_to_img
-from nilearn import datasets, image
 import nibabel as nib
-import dataset
+from nilearn import datasets, image
+from nilearn.image import resample_to_img, smooth_img
+from scipy.ndimage import label
+from nilearn.plotting import plot_stat_map
+from scipy.ndimage import center_of_mass
+from nibabel.affines import apply_affine
 import pandas as pd
-from scipy.stats import pearsonr
-from joblib import Parallel, delayed
-from tqdm import tqdm
+from nilearn.image import load_img, coord_transform
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger("ridge_corr")
 
-def load_dataset(args, paths, participant_list, mask):
-    """Loads the dataset using parsed arguments."""
-    dataset_args = {
-        "data_path": paths["data_path"],
-        "fmri_data_path": paths["fmri_data_path"][args.data_type],  # pick based on type
-        "embeddings_text_path": paths["embeddings_text_path"],
-        "embeddings_audio_path": paths["embeddings_audio_path"],
-        "embeddings_audio_opensmile_path": paths["embeddings_audio_opensmile_path"],
-        "use_base_features": args.use_base_features,
-        "use_text": args.use_text,
-        "use_audio": args.use_audio,
-        "use_audio_opensmile": args.use_audio_opensmile,
-        "use_text_weighted": args.use_text_weighted,
-        "pca_threshold": args.pca_threshold,
-        "use_pca": args.use_pca,
-        "use_umap": args.use_umap,
-        "included_tasks": args.include_tasks,
-    }
+# 1. Load correlation maps
+r_text_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_text_weighted_base_5.npy")
+r_text = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_text_weighted_base_5.npy")
+r_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_base_5.npy")
 
-    # Instantiate dataset (this will run __init__ + create_data automatically)
-    dataset_obj = dataset.WholeBrainDatasetWithRaw(
-        participant_list=participant_list,
-        mask=mask,
-        **dataset_args
-    )
+# 2. Compute delta_r
+delta_r = r_text_audio - np.maximum(r_text, r_audio)
 
-    # Return everything
-    return dataset_obj.data, dataset_obj.fmri_data, dataset_obj.ids_list, dataset_obj.raw_df
+# 3. Function to print stats
+def print_stats(name, data):
+    print(f"{name}: Min = {data.min():.4f}, Max = {data.max():.4f}, M = {data.mean():.4f}, SD = {data.std():.4f}")
 
-zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
+# 4. Print stats for each map
+print_stats("Text-Audio", r_text_audio)
+print_stats("Text", r_text)
+print_stats("Audio", r_audio)
+print_stats("Delta r", delta_r)
 
-def noise_ceiling_corr(raw_df, resp, participant_ids, match_columns, normalize_resp=True, n_jobs=1, logger=None, voxel_indices=None):
-    """
-    Compute noise ceiling correlation for specified voxels or all voxels.
+# 3. Load mask and example data
+icbm = datasets.fetch_icbm152_2009()
+mask_path = icbm['mask']
+mask = image.load_img(mask_path)
+
+example_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
+resampled_mask = resample_to_img(mask, example_data, interpolation='nearest')
+brain_mask = resampled_mask.get_fdata() > 0
+
+# 4. Map delta_r to 3D brain space
+delta_r_3d = np.zeros(brain_mask.shape)
+delta_r_3d[brain_mask] = delta_r
+
+
+# 5. Apply threshold (99.9th percentile)
+threshold = np.percentile(delta_r, 99.9)
+threshold_mask = delta_r_3d > threshold
+
+# 6. Perform clustering with 6-connectivity
+structure = np.ones((3, 3, 3))
+labeled_array, num_clusters = label(threshold_mask, structure=structure)
+print(f"Found {num_clusters} clusters.")
+
+
+# 7. Compute stats for each cluster
+min_size = 5
+cluster_stats = []
+
+for cluster_label in range(1, num_clusters + 1):
+    cluster_mask = (labeled_array == cluster_label)
+    cluster_size = cluster_mask.sum()
+    if cluster_size < min_size:
+        continue
+
+    cluster_vals = delta_r_3d[cluster_mask]
+    cluster_mean = cluster_vals.mean()
+    cluster_mass = cluster_vals.sum()
+    cluster_max = cluster_vals.max()
+    cluster_min = cluster_vals.min()
+
+    # Get peak voxel index in full 3D mask
+    peak_idx_flat = np.where(cluster_mask & (delta_r_3d == cluster_max))
+    # Note: may be multiple — take first
+    peak_voxel = tuple(coord[0] for coord in peak_idx_flat)
+
+    # Compute center of mass in voxel indices
+    com_voxel = center_of_mass(cluster_mask)
+
+    # Convert to MNI space using affine
+    peak_mni = apply_affine(resampled_mask.affine, peak_voxel)
+    com_mni = apply_affine(resampled_mask.affine, com_voxel)
+
+    cluster_stats.append({
+        "label": cluster_label,
+        "size": cluster_size,
+        "mean": cluster_mean,
+        "mass": cluster_mass,
+        "max": cluster_max,
+        "min": cluster_min,
+        "peak_voxel": peak_voxel,
+        "peak_mni": peak_mni,
+        "com_voxel": com_voxel,
+        "com_mni": com_mni
+    })
+
+print(f"Found {len(cluster_stats)} clusters after size filtering.")
+
+# === 8. Sort by mass ===
+cluster_stats_sorted = sorted(cluster_stats, key=lambda x: x['mean'], reverse=True)
+
+# === 9. Print nicely ===
+print("\nTop clusters (sorted by mass):")
+for i, cluster in enumerate(cluster_stats_sorted[:15], 1):
+    print(f"#{i} | Label: {cluster['label']:>3} | Size: {cluster['size']:>5} vox "
+          f"| Mean: {cluster['mean']:.4f} | Mass: {cluster['mass']:.4f} "
+          f"| Max: {cluster['max']:.4f} | Min: {cluster['min']:.4f}")
+    print(f"    Peak voxel index: {cluster['peak_voxel']}")
+    print(f"    Peak MNI coord: {np.round(cluster['peak_mni'], 2)}")
+    print(f"    Center-of-mass (voxel): {np.round(cluster['com_voxel'], 2)}")
+    print(f"    Center-of-mass (MNI): {np.round(cluster['com_mni'], 2)}\n")
+
+
+def get_brain_region(mni_coords, atlas='destrieux'):
+    atlas_data = datasets.fetch_atlas_destrieux_2009(legacy_format=True)
+    atlas_img = load_img(atlas_data['maps'])
+    atlas_labels = atlas_data['labels']
     
-    Args:
-        raw_df (pd.DataFrame): DataFrame with condition information.
-        resp (np.ndarray): fMRI response data (time points x voxels).
-        participant_ids (np.ndarray): Array of participant IDs.
-        match_columns (list): Columns in raw_df to match conditions.
-        normalize_resp (bool): Whether to z-score the response data.
-        n_jobs (int): Number of parallel jobs.
-        logger: Logger instance.
-        voxel_indices (list or int, optional): Specific voxel indices to process. If None, process all voxels.
+    voxel_coords = tuple(round(x) for x in coord_transform(*mni_coords, np.linalg.inv(atlas_img.affine)))
+    region_index = int(atlas_img.get_fdata()[voxel_coords])
     
-    Returns:
-        np.ndarray: Noise ceiling correlations for specified or all voxels.
-    """
-    if raw_df.shape[0] != resp.shape[0]:
-        raise ValueError("raw_df and resp must have same number of time points.")
-    if not all(col in raw_df.columns for col in match_columns):
-        raise ValueError("All match_columns must be present in raw_df.")
-    if participant_ids.shape[0] != resp.shape[0]:
-        raise ValueError("participant_ids must have same length as resp rows.")
+    return atlas_labels[region_index][1] if region_index < len(atlas_labels) else 'Unknown'
 
-    resp = zs(resp) if normalize_resp else resp
 
-    logger = logger or logging.getLogger("noise_ceiling")
-    logger.info("Computing noise ceiling with Pearson correlation...")
+def get_brain_region_aal(mni_coords, atlas='aal'):
+    # Fetch the AAL atlas
+    atlas_data = datasets.fetch_atlas_aal(version='SPM12')
+    atlas_img = load_img(atlas_data['maps'])
+    atlas_labels = atlas_data['labels']
+    atlas_indices = atlas_data['indices']  # AAL provides indices for mapping
 
-    # Determine voxels to process
-    if voxel_indices is None:
-        voxel_indices = range(resp.shape[1])
-    elif isinstance(voxel_indices, int):
-        voxel_indices = [voxel_indices]
-    elif not isinstance(voxel_indices, (list, np.ndarray)):
-        raise ValueError("voxel_indices must be an integer, list, or numpy array.")
+    # Transform MNI coordinates to voxel coordinates in atlas space
+    voxel_coords = coord_transform(*mni_coords, np.linalg.inv(atlas_img.affine))
+    voxel_coords = tuple(int(round(x)) for x in voxel_coords)  # Round to nearest integer
+
+    # Get the region index from the atlas
+    region_index = int(atlas_img.get_fdata()[voxel_coords])
+    
+    return atlas_labels[atlas_indices.index(str(region_index))] if region_index in [int(i) for i in atlas_indices] else "Unknown"
+    
+
+def get_brain_region_ho(mni_coords, atlas='cortical', threshold=0):
+    # Validate atlas type
+    if atlas not in ['cortical', 'subcortical']:
+        raise ValueError("Atlas must be 'cortical' or 'subcortical'.")
+
+    # Fetch the Harvard-Oxford atlas
+    if atlas == 'cortical':
+        atlas_data = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr0-1mm')
     else:
-        voxel_indices = np.array(voxel_indices)
-        if not all(0 <= v < resp.shape[1] for v in voxel_indices):
-            raise ValueError("All voxel indices must be within valid range.")
+        atlas_data = datasets.fetch_atlas_harvard_oxford('sub-maxprob-thr0-1mm')
 
-    logger.info("Processing %d voxels...", len(voxel_indices))
+    atlas_img = load_img(atlas_data['maps'])
+    atlas_labels = atlas_data['labels']
 
-    # Check condition matches to ensure one time point per participant per condition
-    def _check_condition_matches():
-        logger.info("Checking condition matches across all data...")
-        condition_groups = raw_df.groupby(match_columns).size().reset_index(name='count')
-        for _, condition in condition_groups.iterrows():
-            condition_mask = np.ones(len(raw_df), dtype=bool)
-            for col in match_columns:
-                condition_mask &= (raw_df[col] == condition[col]).values
-            matching_indices = np.where(condition_mask)[0]
-            matching_participants = participant_ids[matching_indices]
-            participant_counts = pd.Series(matching_participants).value_counts()
-            n_unique_participants = len(participant_counts)
-            one_per_participant = (participant_counts == 1).all()
-            if one_per_participant:
-                logger.info(f"Condition {condition[match_columns].to_dict()}: "
-                           f"{n_unique_participants}/{len(np.unique(participant_ids))} participants have exactly one time point.")
-            else:
-                logger.warning(f"Condition {condition[match_columns].to_dict()}: "
-                              f"Some participants have multiple or zero time points: {participant_counts.to_dict()}")
+    # Transform MNI coordinates to voxel coordinates in atlas space
+    voxel_coords = coord_transform(*mni_coords, np.linalg.inv(atlas_img.affine))
+    voxel_coords = tuple(int(round(x)) for x in voxel_coords)  # Round to nearest integer
 
-    _check_condition_matches()
+    # Get the region index from the atlas
+    region_index = int(atlas_img.get_fdata()[voxel_coords])
 
-    def _compute_voxel_correlation(v):
-        """Compute Pearson correlation for voxel v across all participants."""
-        x_all, y_all = [], []
-        for pid in np.unique(participant_ids):
-            # Get indices for the current participant
-            pid_idx = np.where(participant_ids == pid)[0]
-            # Get indices for other participants
-            other_idx = np.where(participant_ids != pid)[0]
-            
-            x_pid, y_pid = [], []
-            for idx in pid_idx:
-                # Find matching indices from other participants
-                mask = np.ones(len(other_idx), dtype=bool)
-                for col in match_columns:
-                    mask &= (raw_df.iloc[other_idx][col] == raw_df.iloc[idx][col]).values
-                matching_idx = other_idx[mask]
-                if len(matching_idx) > 0:
-                    # Compute mean response for voxel v from other participants
-                    x_pid.append(np.nanmean(resp[matching_idx, v]))
-                    y_pid.append(resp[idx, v])
-                else:
-                    x_pid.append(np.nan)
-                    y_pid.append(resp[idx, v])
-            
-            x_all.extend(x_pid)
-            y_all.extend(y_pid)
-        
-        # Convert to arrays and remove NaN pairs
-        x_all = np.array(x_all)
-        y_all = np.array(y_all)
-        valid_mask = ~(np.isnan(x_all) | np.isnan(y_all))
-        if np.sum(valid_mask) < 2:
-            return np.nan
-        corr, _ = pearsonr(x_all[valid_mask], y_all[valid_mask])
-        return corr
-
-    logger.info("Computing correlations for %d voxels using %d jobs...", len(voxel_indices), n_jobs)
-    # Wrap the voxel range with tqdm for progress tracking
-    if tqdm is not None and n_jobs == 1:
-        # For single-threaded execution, use tqdm directly
-        noise_ceiling = [_compute_voxel_correlation(v) for v in tqdm(voxel_indices, desc="Computing voxel correlations")]
+    # Return the label if the index is valid, else "Unknown"
+    if region_index > 0 and region_index < len(atlas_labels):
+        return atlas_labels[region_index]
     else:
-        # For parallel execution, use joblib with tqdm
-        if tqdm is not None:
-            noise_ceiling = Parallel(n_jobs=n_jobs)(
-                delayed(_compute_voxel_correlation)(v) for v in tqdm(voxel_indices, desc="Computing voxel correlations")
-            )
-        else:
-            noise_ceiling = Parallel(n_jobs=n_jobs)(
-                delayed(_compute_voxel_correlation)(v) for v in voxel_indices
-            )
-    noise_ceiling = np.array(noise_ceiling)
+        return "Unknown"
 
-    logger.info("Completed noise ceiling: mean correlation across voxels=%0.5f, max=%0.5f",
-                np.nanmean(noise_ceiling), np.nanmax(noise_ceiling))
 
-    return noise_ceiling
+table_data = []
+for i, cluster in enumerate(cluster_stats_sorted, 1):
+    region = get_brain_region_aal(cluster['peak_mni'])
+    table_data.append({
+        '#': i,
+        'Size (vox)': cluster['size'],
+        'Mean': round(cluster['mean'], 4),
+        'Mass': round(cluster['mass'], 4),
+        'Max': round(cluster['max'], 4),
+        'Min': round(cluster['min'], 4),
+        'Peak MNI Coord': tuple(round(x, 2) for x in cluster['peak_mni']),
+        'CoM MNI': tuple(round(x, 2) for x in cluster['com_mni']),
+        'Region': region
+    })
 
-def main():
-    start_time = time.time()
+df = pd.DataFrame(table_data)
+print(df.to_string(index=False))
 
-    # Load paths and participants
-    paths = analysis_helpers.get_paths()
-    participant_list = os.listdir(paths["data_path"])
 
-    # Load mask
-    icbm = datasets.fetch_icbm152_2009()
-    mask_path = icbm['mask']
-    mask = image.load_img(mask_path)
-    exemple_data = nib.load("data/fmri/normalized_time/p01/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
-    resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
+df.to_excel('results_wholebrain_irosar/results_maps/cluster_stats_table_999.xlsx', index=False)
 
-    match_columns = ['context', 'semantic', 'prosody', 'task', 'situation']    
+# 10. Save all clusters in a single NIfTI map with delta_r_3d values
+all_clusters_map = np.zeros_like(delta_r_3d)
+for cluster in cluster_stats:
+    cluster_label = cluster['label']
+    cluster_mask = (labeled_array == cluster_label)
+    all_clusters_map[cluster_mask] = delta_r_3d[cluster_mask]
+all_clusters_img = nib.Nifti1Image(all_clusters_map, affine=example_data.affine)
+nib.save(all_clusters_img, "results_wholebrain_irosar/results_maps/all_clusters_map_999.nii")
+print("\nSaved all clusters in a single NIfTI file with delta_r values: results_wholebrain_irosar/results_maps/all_clusters_map.nii")
 
-    # Define arguments directly
-    class Args:
-        use_audio = False
-        use_text = False
-        use_base_features = True
-        use_text_weighted = True
-        use_audio_opensmile = True
-        include_tasks = ["irony", "sarcasm"]
-        use_pca = True
-        pca_threshold = 0.55
-        use_umap = False
-        data_type = 'normalized_time'
-        output_dir = "results"
-        voxel_indices = 'max'  # Options: None, int (e.g., 42), list (e.g., [0, 1, 2]), or 'max'
+# # 10b. Save top 10 clusters in a single NIfTI map with delta_r_3d values
+# top_clusters_map = np.zeros_like(delta_r_3d)
+# for cluster in cluster_stats_sorted[:15]:
+#     cluster_label = cluster['label']
+#     cluster_mask = (labeled_array == cluster_label)
+#     top_clusters_map[cluster_mask] = delta_r_3d[cluster_mask]
+# top_clusters_img = nib.Nifti1Image(top_clusters_map, affine=example_data.affine)
+# nib.save(top_clusters_img, "results_wholebrain_irosar/results_maps/top_10_clusters_map.nii")
+# print("\nSaved top 10 clusters in a single NIfTI file with delta_r values: results_wholebrain_irosar/results_maps/top_10_clusters_map.nii")
 
-    args = Args()
+# 11. Save and plot top clusters independently
+for i, cluster in enumerate(cluster_stats_sorted, 1):
+    cluster_label = cluster['label']
+    cluster_mask = (labeled_array == cluster_label)
+    cluster_map = np.zeros_like(delta_r_3d)
+    cluster_map[cluster_mask] = delta_r_3d[cluster_mask]
+    cluster_img = nib.Nifti1Image(cluster_map, affine=example_data.affine)
+    nib.save(cluster_img, f"results_wholebrain_irosar/results_maps/top_cluster_{i}_999.nii")
+    # Plot each cluster independently
+    plot_stat_map(cluster_img, title=f"Cluster {i} (Label {cluster_label})")
 
-    # Load dataset
-    stim_df, resp, ids_list, raw_df = load_dataset(args, paths, participant_list, resampled_mask)
+print("\nSaved and plotted top 10 clusters as individual NIfTI files.")
 
-    # Handle voxel_indices
-    voxel_indices = None
-    if args.voxel_indices:
-        if args.voxel_indices == 'max':
-            # Load correlation map and find voxel with maximum correlation
-            r_text_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_text_weighted_base_5.npy")
-            voxel_indices = [np.argmax(r_text_audio)]
-            logger.info(f"Selected voxel with maximum correlation: index {voxel_indices[0]}")
-        elif isinstance(args.voxel_indices, int):
-            voxel_indices = [args.voxel_indices]
-            logger.info(f"Selected voxel index: {voxel_indices}")
-        elif isinstance(args.voxel_indices, (list, np.ndarray)):
-            voxel_indices = args.voxel_indices
-            logger.info(f"Selected voxel indices: {voxel_indices}")
-        else:
-            raise ValueError("voxel_indices must be None, 'max', an integer, or a list/array of integers.")
 
-    # Compute noise ceiling
-    noise_ceiling = noise_ceiling_corr(
-        raw_df=raw_df,
-        resp=resp,
-        participant_ids=ids_list,
-        match_columns=match_columns,
-        normalize_resp=True,
-        logger=logger,
-        voxel_indices=voxel_indices
-    )
 
-    # Save results
-    os.makedirs(args.output_dir, exist_ok=True)
-    output_file = "noise_ceiling_corr"
-    if voxel_indices is not None:
-        output_file += f"_voxels_{'_'.join(map(str, voxel_indices))}"
-    output_file += ".npy"
-    np.save(os.path.join(args.output_dir, output_file), noise_ceiling)
-    logger.info(f"Saved noise ceiling correlations to {os.path.join(args.output_dir, output_file)}")
 
-    end_time = time.time()
-    logger.info(f"Total execution time: {end_time - start_time:.2f} seconds")
-
-if __name__ == "__main__":
-    main()
