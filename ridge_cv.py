@@ -407,8 +407,7 @@ def ridge_corr_pred(Rstim, Pstim, Rresp, Presp, valphas, normalpha=False,
     PVh = np.dot(Pstim, Vh.T) ## Precompute this matrix product for speed
     
     #Prespnorms = np.apply_along_axis(np.linalg.norm, 0, Presp) ## Precompute test response norms
-    #zPresp = zs(Presp)
-    zPresp = Presp
+    zPresp = zs(Presp)
     #Prespvar = Presp.var(0)
     Prespvar_actual = Presp.var(0)
     Prespvar = (np.ones_like(Prespvar_actual) + Prespvar_actual) / 2.0
@@ -509,8 +508,7 @@ def ridge_corr(Rstim, Pstim, Rresp, Presp, alphas, normalpha=False, corrmin=0.2,
     PVh = np.dot(Pstim, Vh.T) ## Precompute this matrix product for speed
     
     #Prespnorms = np.apply_along_axis(np.linalg.norm, 0, Presp) ## Precompute test response norms
-    #zPresp = zs(Presp)
-    zPresp = Presp
+    zPresp = zs(Presp)
     #Prespvar = Presp.var(0)
     Prespvar_actual = Presp.var(0)
     Prespvar = (np.ones_like(Prespvar_actual) + Prespvar_actual) / 2.0

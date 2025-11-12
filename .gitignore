@@ -5,3 +5,5 @@ request.sh
 __pycache__/
 results/
 results_wholebrain_irosar/
+brain_plots/
+trash/

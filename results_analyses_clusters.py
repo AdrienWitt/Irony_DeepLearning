@@ -43,7 +43,7 @@ delta_r_3d[brain_mask] = delta_r
 
 
 # 5. Apply threshold (99.9th percentile)
-threshold = np.percentile(delta_r, 99.9)
+threshold = np.percentile(delta_r, 99.5)
 threshold_mask = delta_r_3d > threshold
 
 # 6. Perform clustering with 6-connectivity
@@ -185,7 +185,7 @@ df = pd.DataFrame(table_data)
 print(df.to_string(index=False))
 
 
-df.to_excel('results_wholebrain_irosar/results_maps/cluster_stats_table_999.xlsx', index=False)
+df.to_excel('results_wholebrain_irosar/results_maps/cluster_stats_table.xlsx', index=False)
 
 # 10. Save all clusters in a single NIfTI map with delta_r_3d values
 all_clusters_map = np.zeros_like(delta_r_3d)
@@ -194,7 +194,7 @@ for cluster in cluster_stats:
     cluster_mask = (labeled_array == cluster_label)
     all_clusters_map[cluster_mask] = delta_r_3d[cluster_mask]
 all_clusters_img = nib.Nifti1Image(all_clusters_map, affine=example_data.affine)
-nib.save(all_clusters_img, "results_wholebrain_irosar/results_maps/all_clusters_map_999.nii")
+nib.save(all_clusters_img, "results_wholebrain_irosar/results_maps/all_clusters_map.nii")
 print("\nSaved all clusters in a single NIfTI file with delta_r values: results_wholebrain_irosar/results_maps/all_clusters_map.nii")
 
 # # 10b. Save top 10 clusters in a single NIfTI map with delta_r_3d values
@@ -214,11 +214,11 @@ for i, cluster in enumerate(cluster_stats_sorted, 1):
     cluster_map = np.zeros_like(delta_r_3d)
     cluster_map[cluster_mask] = delta_r_3d[cluster_mask]
     cluster_img = nib.Nifti1Image(cluster_map, affine=example_data.affine)
-    nib.save(cluster_img, f"results_wholebrain_irosar/results_maps/top_cluster_{i}_999.nii")
+    nib.save(cluster_img, f"results_wholebrain_irosar/results_maps/top_cluster_{i}.nii")
     # Plot each cluster independently
     plot_stat_map(cluster_img, title=f"Cluster {i} (Label {cluster_label})")
 
-print("\nSaved and plotted top 10 clusters as individual NIfTI files.")
+print("\nSaved and plotted top clusters as individual NIfTI files.")
 
 
 
