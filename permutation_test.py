@@ -44,9 +44,11 @@ def parse_arguments():
     parser.add_argument("--pca_threshold", type=float, default=0.6)
     parser.add_argument("--include_tasks", type=str, nargs="+", default=["irony", "sarcasm"])
     parser.add_argument("--data_type", type=str, default="normalized_time")
+    parser.add_argument("--n_splits", type=int, default=None,
+                               help="Number of splits for cross-validation (default: number of participants for LOO CV).")
     parser.add_argument("--n_perms", type=int, default=1000)
     parser.add_argument("--random_seed", type=int, default=42)
-    parser.add_argument("--n_jobs", type=int, default=4)
+    parser.add_argument("--num_jobs", type=int, default=4)
     parser.add_argument("--corrmin", type=float, default=0.0)
     parser.add_argument("--normalpha", action="store_true", default=True)
     parser.add_argument("--use_corr", action="store_true", default=True)
@@ -100,7 +102,7 @@ def run_one_permutation(
         return_wt=False,
         normalize_stim=args.normalize_stim,
         normalize_resp=args.normalize_resp,
-        n_jobs=args.n_jobs,
+        n_jobs=args.num_jobs,
         with_replacement=False,
         optimize_alpha=False,
         valphas=valphas,
@@ -121,7 +123,7 @@ def run_one_permutation(
         return_wt=False,
         normalize_stim=args.normalize_stim,
         normalize_resp=args.normalize_resp,
-        n_jobs=args.n_jobs,
+        n_jobs=args.num_jobs,
         with_replacement=False,
         optimize_alpha=False,
         valphas=valphas,
@@ -142,7 +144,7 @@ def run_one_permutation(
         return_wt=False,
         normalize_stim=args.normalize_stim,
         normalize_resp=args.normalize_resp,
-        n_jobs=args.n_jobs,
+        n_jobs=args.num_jobs,
         with_replacement=False,
         optimize_alpha=False,
         valphas=valphas,
@@ -234,7 +236,7 @@ def main():
     rng = np.random.RandomState(args.random_seed)
     seeds = rng.randint(0, 2**31 - 1, size=args.n_perms)
 
-    perm_results = Parallel(n_jobs=args.n_jobs)(
+    perm_results = Parallel(n_jobs=args.num_jobs)(
         delayed(run_one_permutation)(
             stim_df, resp, ids_list,
             cols_text, cols_audio, cols_combined,
