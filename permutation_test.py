@@ -170,7 +170,7 @@ def main():
 
     # --- Load data ---
     paths = analysis_helpers.get_paths()
-    participant_list = sorted(os.listdir(paths["data_path"]))
+    participant_list = sorted(os.listdir(paths["data_path"]))[1:5]
 
     icbm = datasets.fetch_icbm152_2009()
     mask = image.load_img(icbm["mask"])
@@ -257,8 +257,9 @@ def main():
     perm_dir = os.path.join(results_path, "permutation_results")
     os.makedirs(perm_dir, exist_ok=True)
 
-    out_file = os.path.join(perm_dir, "perm_stats_textweighted_opensmile_with_base.np")
-    np.save(
+    out_file = os.path.join(perm_dir, "perm_stats_textweighted_opensmile_with_base.npz")
+
+    np.savez(
         out_file,
         delta_obs=delta_obs,
         delta_perm=delta_perm,
@@ -268,9 +269,7 @@ def main():
         cols_text=cols_text,
         cols_audio=cols_audio,
         cols_combined=cols_combined,
-    )
-    logger.info(f"Results saved to {out_file}")
-    logger.info(f"Total time: {(time.time() - start_time)/60:.2f} min.")
+)
 
 
 if __name__ == "__main__":
