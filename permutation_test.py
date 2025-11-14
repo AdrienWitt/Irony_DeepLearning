@@ -170,7 +170,7 @@ def main():
 
     # --- Load data ---
     paths = analysis_helpers.get_paths()
-    participant_list = sorted(os.listdir(paths["data_path"]))[1:5]
+    participant_list = sorted(os.listdir(paths["data_path"]))
 
     icbm = datasets.fetch_icbm152_2009()
     mask = image.load_img(icbm["mask"])
