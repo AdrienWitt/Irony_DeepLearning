@@ -522,6 +522,6 @@ class WholeBrainDatasetWithRaw(WholeBrainDataset):
                     "age": row["age"],
                     "gender": row["genre"],
                     "participant": participant,
-                    "situation": row["Situation"],   # ✅ now preserved
+                    "situation": row["Situation"],   
                 })
         return full_df

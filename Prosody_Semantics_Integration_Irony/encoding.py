@@ -30,8 +30,6 @@ def parse_arguments():
                                help="Include audio in dataset (default: False).")
     dataset_group.add_argument("--use_pca", action="store_true", 
                                help="Use PCA for embeddings with a certain amount of explained variance directly in the dataset method (default: False).")
-    dataset_group.add_argument("--use_umap", action="store_true",
-                               help="Use UMAP for dimensionality reduction (default: False).")
     dataset_group.add_argument("--pca_threshold", type=float, default=0.60,
                                help="Explained variance threshold for PCA (default: 0.60).")
     dataset_group.add_argument("--include_tasks", type=str, nargs='+', default=["sarcasm", "irony", "prosody", "semantic", "tom"],
@@ -42,8 +40,8 @@ def parse_arguments():
                                help="Number of parallel jobs for voxel processing (default: -1 for all cores).")
     analysis_group.add_argument("--optimize_alpha", action="store_true",
                                help="Optimize alpha values using LOO bootstrapping (default: False, use precomputed valphas if provided).")
-    analysis_group.add_argument("--alpha_min", type=float, default=-3,
-                               help="Minimum exponent for alpha values in logspace (default: -3).")
+    analysis_group.add_argument("--alpha_min", type=float, default=-2,
+                               help="Minimum exponent for alpha values in logspace (default: -2).")
     analysis_group.add_argument("--alpha_max", type=float, default=3,
                                help="Maximum exponent for alpha values in logspace (default: 3).")
     analysis_group.add_argument("--num_alphas", type=int, default=10,
@@ -83,7 +81,6 @@ def main():
           f"- Use text: {args.use_text}\n"
           f"- Use audio: {args.use_audio}\n"
           f"- Use PCA: {args.use_pca}\n"
-          f"- Use UMAP: {args.use_umap}\n"
           f"- PCA threshold: {args.pca_threshold}\n"
           f"- Number of jobs: {args.num_jobs}\n"
           f"- Optimize alpha: {args.optimize_alpha}\n"
@@ -103,13 +100,12 @@ def main():
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
 
-    # mask = nib.load("ROIs/ROIall_bin.nii")
     icbm = datasets.fetch_icbm152_2009()
     mask_path = icbm['mask']
     # Load the mask as a Nifti image object
     mask = image.load_img(mask_path)
 
-    exemple_data = nib.load("data\example_fmri\p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
+    exemple_data = nib.load("data/example_fmri/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
     resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
 
     stim_df, resp, ids_list = analysis_helpers.load_dataset(args, paths, participant_list, resampled_mask)
@@ -117,7 +113,7 @@ def main():
     # Set alphas based on arguments
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
 
-    # Handle precomputed valphas
+    # Handle precomputed alphas
     if not args.optimize_alpha:
         valphas_path = os.path.join(paths["results_path"][args.data_type], "valphas_audio_opensmile_text_weighted_base.npy")
         if not os.path.exists(valphas_path):
@@ -164,13 +160,15 @@ def main():
     
     # Set results directory
     results_path = args.results_dir if args.results_dir else paths["results_path"]
+    os.makedirs(results_path, exist_ok=True)
+
     
     # Save corrs (mean correlations across folds) in flattened space
     np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}_{args.n_splits}.npy"), corrs)
     np.save(os.path.join(results_path, f"folds_correlation_map_flat_{feature_str}_{args.n_splits}.npy"), fold_corrs)
     ridge_logger.info(f"Saved flattened correlations to {results_path}/correlation_map_flat_{feature_str}.npy")
     
-    # Save valphas as 1D array (not as volume)
+    # Save valphas
     if args.optimize_alpha:
         result_file_valphas = os.path.join(results_path, f"valphas_{feature_str}.npy")
         np.save(result_file_valphas, valphas)

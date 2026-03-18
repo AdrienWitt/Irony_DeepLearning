@@ -196,6 +196,8 @@ def main():
     
     # Set results directory
     results_path = args.results_dir if args.results_dir else paths["results_path"][args.data_type]
+    os.makedirs(results_path, exist_ok=True)
+    
     
     # Save corrs (mean correlations across folds) in flattened space
     np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}_{args.n_splits}.npy"), corrs)

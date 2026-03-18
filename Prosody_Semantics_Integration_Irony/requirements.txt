@@ -4,5 +4,6 @@ scikit-learn
 nibabel
 nilearn
 joblib
-umap-learn
 torch
+scipy
+statsmodels

@@ -1,199 +1,214 @@
-"""
-Dataset loader for encoding pipeline.
-Keeps only `text` (statement-weighted) and `audio` (openSMILE) embeddings
-and returns a features DataFrame, fMRI array and participant ids.
-"""
-
 import os
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-
-from audio_text_embeddings import load_text_weighted, load_audio_opensmile
-
-
-def _apply_pca(arr, n_components=0.95):
-    pca = PCA(n_components=n_components)
-    return pca.fit_transform(arr)
+from concurrent.futures import ThreadPoolExecutor
+from torch.utils.data import Dataset
+import analysis_helpers
 
 
-class WholeBrainDataset:
+class WholeBrainDataset(Dataset):
     def __init__(self, participant_list, data_path, fmri_data_path, mask,
                  included_tasks=None, use_base_features=True,
                  use_text=True, use_audio=True,
                  embeddings_text_path=None, embeddings_audio_path=None,
-                 pca_threshold=0.95, use_pca=False, use_umap=False):
-        self.participant_list = participant_list
+                 pca_threshold=0.50, use_pca=False, **kwargs):
+        super().__init__()
         self.data_path = data_path
         self.fmri_data_path = fmri_data_path
-        self.mask = mask
-        self.included_tasks = included_tasks or ['irony', 'sarcasm']
+        self.participant_list = participant_list
+        self.included_tasks = included_tasks or ["sarcasm", "irony", "prosody", "semantic", "tom"]
         self.use_base_features = use_base_features
-        self.use_text = use_text
-        self.use_audio = use_audio
-        self.embeddings_text_path = embeddings_text_path
-        self.embeddings_audio_path = embeddings_audio_path
+        self.use_text = use_text          
+        self.use_audio = use_audio        
+        self.embeddings_text_path = embeddings_text_path      
+        self.embeddings_audio_path = embeddings_audio_path   
         self.pca_threshold = pca_threshold
         self.use_pca = use_pca
         self.scaler = StandardScaler()
 
-    def create_base_data(self):
-        base = []
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+
+        self.mask = mask
+        self.fmri_cache = self.preload_fmri()
+        self.data, self.fmri_data, self.ids_list = self.create_data()
+
+    def preload_fmri(self):
+        """Preload all fMRI .npy files into a cache."""
+        fmri_cache = {}
         for participant in self.participant_list:
-            pdir = os.path.join(self.data_path, participant)
-            if not os.path.isdir(pdir):
+            participant_fmri_path = os.path.join(self.fmri_data_path, participant)
+            if not os.path.exists(participant_fmri_path):
                 continue
+            for fmri_file in os.listdir(participant_fmri_path):
+                if fmri_file.endswith('.npy'):
+                    key = f"{participant}/{fmri_file}"
+                    fmri_cache[key] = np.load(os.path.join(participant_fmri_path, fmri_file), mmap_mode='r')
+        return fmri_cache
+        
 
-            for fname in os.listdir(pdir):
-                if fname.endswith('.csv'):
-                    df = pd.read_csv(os.path.join(pdir, fname))
-                elif fname.endswith('.txt'):
-                    # behavioral exports are space-delimited text files
-                    df = pd.read_csv(os.path.join(pdir, fname), sep='\s+')
-                else:
+    def apply_pca(self, embeddings_df, prefix):
+        """Apply PCA to embeddings."""
+        embeddings_scaled = self.scaler.fit_transform(embeddings_df)
+        pca = PCA(n_components=self.pca_threshold)
+        embeddings_pca = pca.fit_transform(embeddings_scaled)
+        return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(embeddings_pca.shape[1])])
+
+    def process_participant(self, participant):
+        """Process data for a single participant in parallel."""
+        participant_data_path = os.path.join(self.data_path, participant)
+        dfs = analysis_helpers.load_dataframe(participant_data_path)
+
+        final_data = []
+        fmri_data_list = []
+        ids_list = []
+        embeddings_text_list = []   
+        embeddings_audio_list = []  
+        task_counts = {task: 0 for task in self.included_tasks}
+        sample_count = 0
+
+        voxel_indices = np.where(self.mask.get_fdata().reshape(-1) > 0)[0]
+
+        for df in dfs.values():
+            df = df.rename(columns=lambda x: x.strip())
+            for index, row in df.iterrows():
+                task = row["task"]
+                if task not in self.included_tasks:
                     continue
-
-                for _, row in df.iterrows():
-                    task = row.get('task') or row.get('Task')
-                    if task not in self.included_tasks:
-                        continue
-
-                    # Prefer explicit filename column if available, otherwise build
-                    # filename from Context/Statement fields present in the behavioral files.
-                    fname_field = row.get('filename')
-                    if fname_field:
-                        fmri_fname = f"{participant}_{fname_field}.npy"
-                    else:
-                        context_fn = row.get('Context') or row.get('context') or ''
-                        statement_fn = row.get('Statement') or row.get('statement') or ''
-                        ctx_base = os.path.splitext(str(context_fn))[0]
-                        stmt_base = os.path.splitext(str(statement_fn))[0]
-                        fmri_fname = f"{participant}_{task}_{ctx_base}_{stmt_base}_statement.npy"
-
-                    fmri_path = os.path.join(self.fmri_data_path, participant, fmri_fname)
-                    if not os.path.exists(fmri_path):
-                        continue
-
-                    fmri = np.load(fmri_path)
-                    base.append({
-                        'participant': participant,
-                        'task': task,
-                        'context_condition': row.get('Context') or row.get('context_condition') or row.get('context'),
-                        'statement_condition': row.get('Condition_name') or row.get('statement_condition'),
-                        'situation': row.get('Situation') or row.get('situation'),
-                        'statement': row.get('Statement') or row.get('statement') or statement_fn,
-                        'fmri': fmri,
-                        'age': row.get('age'),
-                        'evaluation': row.get('Evaluation_Score') or row.get('evaluation')
+                
+                task_counts[task] += 1
+                sample_count += 1
+                
+                context = row["Context"]
+                statement = row["Statement"]
+                situation = row["Situation"]
+                evaluation = row["Evaluation_Score"]
+                age = row["age"]
+                gender = row["genre"]
+                fmri_file = f'{participant}_{task}_{context[:-4]}_{statement[:-4]}_statement.npy'
+                fmri_path = f"{participant}/{fmri_file}"
+                
+                parts = row["Condition_name"].split("_")
+                context_cond = parts[0]
+                statement_cond = parts[1]
+                
+                fmri = self.fmri_cache.get(fmri_path)
+                if fmri is None:
+                    continue
+                
+                fmri_masked = fmri[:, voxel_indices]
+                fmri_data_list.append(fmri_masked)
+                
+                if self.use_base_features:
+                    final_data.append({
+                        "context": context_cond,
+                        "semantic": statement_cond[:2],
+                        "prosody": statement_cond[-3:],
+                        "task": task,
+                        "evaluation": evaluation,
+                        "age": age,
+                        "gender": gender,
+                        "participant": participant,
                     })
+                
+                ids_list.append(int(participant[1:]))
 
-        return base
+                if self.use_text and self.embeddings_text_path:
+                    text_file = f"{context_cond}_{situation}_{statement_cond[:2]}_{situation}_weighted.npy"
+                    embeddings_text = np.load(os.path.join(self.embeddings_text_path, text_file))
+                    embeddings_text_list.append(embeddings_text)
+
+                if self.use_audio and self.embeddings_audio_path:
+                    audio_file = statement.replace('.wav', '_opensmile.npy')
+                    embeddings_audio = np.load(os.path.join(self.embeddings_audio_path, audio_file))
+                    embeddings_audio_list.append(embeddings_audio)
+
+        return (final_data, fmri_data_list, ids_list,
+                embeddings_text_list, embeddings_audio_list,
+                task_counts, sample_count)
 
     def create_data(self):
-        base = self.create_base_data()
-        features = []
-        fmri_list = []
-        ids = []
+        """Loads and processes data into feature DataFrame and fMRI DataFrame using parallel processing."""
+        final_data = []
+        fmri_data_list = []
+        ids_list = []
+        embeddings_text_list = []
+        embeddings_audio_list = []
+        task_counts = {task: 0 for task in self.included_tasks}
+        total_samples = 0
 
-        text_embs = []
-        audio_embs = []
-        text_idx = []
-        audio_idx = []
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(self.process_participant, self.participant_list))
 
-        for i, s in enumerate(base):
-            row = {}
-            if self.use_base_features:
-                row['context'] = s.get('context_condition')
-                row['semantic'] = s.get('statement_condition')[:2] if s.get('statement_condition') else None
-                row['prosody'] = s.get('statement_condition')[-3:] if s.get('statement_condition') else None
-                row['task'] = s.get('task')
-                row['participant'] = s.get('participant')
-                row['situation'] = s.get('situation')
-                row['age'] = s.get('age')
-                row['evaluation'] = s.get('evaluation')
+        for (part_final, part_fmri, part_ids,
+             part_text, part_audio,
+             part_task_counts, part_count) in results:
 
-            # load embeddings
-            if self.use_text and self.embeddings_text_path:
-                emb = load_text_weighted(self.embeddings_text_path, row.get('context'), s.get('situation'), row.get('semantic'))
-                if emb is not None:
-                    text_idx.append(i)
-                    text_embs.append(emb)
+            final_data.extend(part_final)
+            fmri_data_list.extend(part_fmri)
+            ids_list.extend(part_ids)
+            embeddings_text_list.extend(part_text)
+            embeddings_audio_list.extend(part_audio)
+            for task, count in part_task_counts.items():
+                task_counts[task] += count
+            total_samples += part_count
 
-            if self.use_audio and self.embeddings_audio_path:
-                aemb = load_audio_opensmile(self.embeddings_audio_path, s.get('statement'))
-                if aemb is not None:
-                    audio_idx.append(i)
-                    audio_embs.append(aemb)
+        print(f"Loaded {total_samples} total samples")
+        for task, count in task_counts.items():
+            print(f" - {task}: {count} samples")
 
-            features.append(row)
-            fmri_list.append(s.get('fmri'))
-            ids.append(int(s.get('participant').lstrip('p')) if str(s.get('participant')).startswith('p') else s.get('participant'))
-
-        df = pd.DataFrame(features)
-
-        # attach text embeddings
-        if text_embs:
-            text_arr = np.vstack(text_embs)
-            if self.use_pca:
-                text_arr = _apply_pca(text_arr, self.pca_threshold)
-            for j in range(text_arr.shape[1]):
-                col = f'text_{j}'
-                df.loc[text_idx, col] = text_arr[:, j]
-
-        if audio_embs:
-            audio_arr = np.vstack(audio_embs)
-            if self.use_pca:
-                audio_arr = _apply_pca(audio_arr, self.pca_threshold)
-            for j in range(audio_arr.shape[1]):
-                col = f'audio_{j}'
-                df.loc[audio_idx, col] = audio_arr[:, j]
-
-        # numeric conversions and scaling
-        if 'age' in df.columns:
-            df['age'] = pd.to_numeric(df['age'], errors='coerce').fillna(df['age'].median())
-            df['age'] = (df['age'] - df['age'].mean()) / (df['age'].std() + 1e-10)
-
-        if 'evaluation' in df.columns:
-            df['evaluation'] = pd.to_numeric(df['evaluation'], errors='coerce').fillna(df['evaluation'].median())
+        # Create base DataFrame
+        if self.use_base_features and final_data:
+            df = pd.DataFrame(final_data)
+            df.reset_index(drop=True, inplace=True)
+            categorical_cols = ['context', 'semantic', 'prosody', 'task', 'gender', 'participant']
+            df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dtype=int)
+            df['evaluation'] = df['evaluation'].fillna(df['evaluation'].median())
             df['evaluation'] = (df['evaluation'] - df['evaluation'].min()) / (df['evaluation'].max() - df['evaluation'].min())
+            df['age'] = self.scaler.fit_transform(df[['age']])
+        else:
+            df = pd.DataFrame(index=range(total_samples))
 
-        # dummy encode categorical variables
-        cat_cols = ['context', 'semantic', 'prosody', 'task', 'participant']
-        present = [c for c in cat_cols if c in df.columns]
-        if present:
-            df = pd.get_dummies(df, columns=present, drop_first=True, dtype=int)
+        # Process text embeddings (weighted)
+        if self.use_text and embeddings_text_list:
+            emb_df = pd.DataFrame(np.vstack(embeddings_text_list))
+            emb_df.columns = [f"emb_text_{i}" for i in range(emb_df.shape[1])]
+            if self.use_pca:
+                pca_df = self.apply_pca(emb_df, "pc_text")
+                df = pd.concat([df, pca_df], axis=1)
+            else:
+                scaled = self.scaler.fit_transform(emb_df)
+                df = pd.concat([df, pd.DataFrame(scaled, columns=emb_df.columns)], axis=1)
 
-        fmri_arr = np.vstack(fmri_list)
-        ids_arr = np.array(ids)
+        # Process audio embeddings (openSMILE)
+        if self.use_audio and embeddings_audio_list:
+            emb_df = pd.DataFrame(np.vstack(embeddings_audio_list))
+            emb_df.columns = [f"emb_audio_{i}" for i in range(emb_df.shape[1])]
+            if self.use_pca:
+                pca_df = self.apply_pca(emb_df, "pc_audio")
+                df = pd.concat([df, pca_df], axis=1)
+            else:
+                scaled = self.scaler.fit_transform(emb_df)
+                df = pd.concat([df, pd.DataFrame(scaled, columns=emb_df.columns)], axis=1)
 
-        return df, fmri_arr, ids_arr
+        if not fmri_data_list:
+            raise ValueError("No fMRI data was loaded. Check paths and file naming.")
+        fmri_data = np.vstack(fmri_data_list)
+        ids_array = np.array(ids_list, dtype=np.int32)
 
+        return df, fmri_data, ids_array
 
-def get_original_variables_dataframe(dataset):
-    """Return a DataFrame with original variables (no dummy coding).
+    def __getitem__(self, index):
+        """Returns a single sample."""
+        features = self.data.iloc[index].values.astype(np.float32)
+        fmri = self.fmri_data[index].astype(np.float32)
+        return {
+            "features": features,
+            "fmri_data": fmri
+        }
 
-    If a `WholeBrainDataset` instance is provided, the function rebuilds the
-    base records and returns the original categorical variables. If a features
-    DataFrame is provided, it attempts to return the subset of original columns.
-    """
-    if isinstance(dataset, WholeBrainDataset):
-        base = dataset.create_base_data()
-        rows = []
-        for r in base:
-            rows.append({
-                'context': r.get('context_condition'),
-                'semantic': r.get('statement_condition')[:2] if r.get('statement_condition') else None,
-                'prosody': r.get('statement_condition')[-3:] if r.get('statement_condition') else None,
-                'task': r.get('task'),
-                'participant': r.get('participant'),
-                'situation': r.get('situation'),
-                'age': r.get('age'),
-                'evaluation': r.get('evaluation')
-            })
-        return pd.DataFrame(rows)
-    elif isinstance(dataset, pd.DataFrame):
-        want = [c for c in ['context', 'semantic', 'prosody', 'task', 'participant', 'situation', 'age', 'evaluation'] if c in dataset.columns]
-        return dataset[want].copy()
-    else:
-        raise ValueError('Unsupported dataset type')
+    def __len__(self):
+        """Returns the total number of samples."""
+        return len(self.data)
