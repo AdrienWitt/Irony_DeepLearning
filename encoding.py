@@ -16,14 +16,16 @@ import logging
 from ridge_cv import ridge_cv
 from nilearn import datasets, image
 
-# args = argparse.Namespace(
-#     use_audio = False,
-#     use_text = False,
-#     use_base_features=True,
-#     use_text_weighted = True,
-#     use_audio_opensmile = True,
-#     include_tasks = ["irony", "sarcasm"],
-#     use_pca=True, num_jobs = 1, alpha = 0.1, pca_threshold = 0.5, use_umap = False, data_type = 'normalized_time')
+args = argparse.Namespace(
+    use_audio = False,
+    use_text = False,
+    use_base_features=True,
+    use_text_weighted = True,
+    use_audio_opensmile = True,
+    include_tasks = ["irony", "sarcasm"],
+    optimize_alpha = True,
+    use_pca=False, num_jobs = 1, pca_threshold = 0.5, use_umap = False, data_type = 'normalized_time', 
+    alpha_min = 1, alpha_max = 6, num_alphas = 20)
 
 
 # Configure logging
@@ -144,10 +146,15 @@ def main():
     
     # Set alphas based on arguments
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
+    
+    # Set results directory
+    results_path = args.results_dir if args.results_dir else paths["results_path"][args.data_type]
+    os.makedirs(results_path, exist_ok=True)
+    
 
     # Handle precomputed valphas
     if not args.optimize_alpha:
-        valphas_path = os.path.join(paths["results_path"][args.data_type], "valphas_audio_opensmile_text_weighted_base.npy")
+        valphas_path = os.path.join(results_path, "valphas_audio_opensmile_text_weighted_base.npy")
         if not os.path.exists(valphas_path):
             raise ValueError("Must provide a valid --precomputed_valphas path when --optimize_alpha is False.")
         valphas = np.load(valphas_path)
@@ -194,10 +201,7 @@ def main():
         features_used.append("base")
     feature_str = "_".join(features_used) if features_used else "nofeatures"
     
-    # Set results directory
-    results_path = args.results_dir if args.results_dir else paths["results_path"][args.data_type]
-    os.makedirs(results_path, exist_ok=True)
-    
+
     
     # Save corrs (mean correlations across folds) in flattened space
     np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}_{args.n_splits}.npy"), corrs)
