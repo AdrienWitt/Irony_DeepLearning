@@ -297,12 +297,19 @@ class WholeBrainDataset(Dataset):
         return fmri_cache
 
     def apply_pca(self, embeddings_df, prefix):
-        """Apply PCA to embeddings."""
         embeddings_scaled = self.scaler.fit_transform(embeddings_df)
-        pca = PCA(n_components=self.pca_threshold)
+        
+        # Si >= 1 → nombre de composantes (int), sinon → seuil de variance (float)
+        n_components = int(self.pca_threshold) if self.pca_threshold >= 1 else self.pca_threshold
+        
+        pca = PCA(n_components=n_components)
         embeddings_pca = pca.fit_transform(embeddings_scaled)
+        
+        actual_variance = np.sum(pca.explained_variance_ratio_)
+        print(f"{prefix}: {embeddings_pca.shape[1]} components → {actual_variance*100:.2f}% variance explained")
+        
         return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(embeddings_pca.shape[1])])
-
+    
     def process_participant(self, participant):
         """Process data for a single participant in parallel."""
         participant_data_path = os.path.join(self.data_path, participant)
@@ -484,44 +491,3 @@ class WholeBrainDataset(Dataset):
         return len(self.data)
     
 
-class WholeBrainDatasetWithRaw(WholeBrainDataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)  # parent builds processed data
-        self.raw_df = self._build_raw_df()
-
-    def _build_raw_df(self):
-        """Re-run participant processing but preserve situation too."""
-        final_data = []
-        with ThreadPoolExecutor() as executor:
-            results = list(executor.map(self._process_participant_with_situation,
-                                        self.participant_list))
-        for result in results:
-            final_data.extend(result)
-        return pd.DataFrame(final_data)
-
-    def _process_participant_with_situation(self, participant):
-        """Wrapper around parent processing that keeps 'situation' in the dicts."""
-        final_data, *_ = super().process_participant(participant)
-        dfs = []
-        # re-run the same loop but keep situation
-        participant_data_path = os.path.join(self.data_path, participant)
-        dfs_dict = processing_helpers.load_dataframe(participant_data_path)
-
-        full_df = []
-        for df in dfs_dict.values():
-            df = df.rename(columns=lambda x: x.strip())
-            for _, row in df.iterrows():
-                if row["task"] not in self.included_tasks:
-                    continue
-                full_df.append({
-                    "context": row["Condition_name"].split("_")[0],
-                    "semantic": row["Condition_name"].split("_")[1][:2],
-                    "prosody": row["Condition_name"].split("_")[1][-3:],
-                    "task": row["task"],
-                    "evaluation": row["Evaluation_Score"],
-                    "age": row["age"],
-                    "gender": row["genre"],
-                    "participant": participant,
-                    "situation": row["Situation"],   
-                })
-        return full_df

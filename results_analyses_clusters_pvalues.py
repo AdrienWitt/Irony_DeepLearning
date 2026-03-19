@@ -15,20 +15,29 @@ from nilearn import datasets, image
 from nilearn.image import resample_to_img, load_img, coord_transform
 from scipy.ndimage import label, center_of_mass
 from nibabel.affines import apply_affine
+import os 
 
 # ================================
 # USER SETTINGS – CHANGE THESE ONLY
 # ================================
-TOP_PERCENTILE   = 99.5        # 99.5 = top 0.5%, 99.8 = top 0.2%, 99.9 = top 0.1%
+TOP_PERCENTILE   = 99.9        # 99.5 = top 0.5%, 99.8 = top 0.2%, 99.9 = top 0.1%
 MIN_CLUSTER_SIZE = 5           # minimum cluster size
 OUTPUT_NAME      = f"top{(100 - TOP_PERCENTILE):.1f}pct_k{MIN_CLUSTER_SIZE}_ALLvox_FDR05"
+
+
+results_dir = "results_wholebrain_irosar/normalized_time"
+# results_dir = "results_pca60"
+
 
 # ================================
 # 1. Load correlation maps
 # ================================
-r_comb = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_text_weighted_base_5.npy")
-r_text = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_text_weighted_base_5.npy")
-r_audio = np.load("results_wholebrain_irosar/normalized_time/correlation_map_flat_audio_opensmile_base_5.npy")
+
+r_comb = np.load(os.path.join(results_dir, "correlation_map_flat_audio_opensmile_text_weighted_base_5.npy"))
+r_text = np.load(os.path.join(results_dir, "correlation_map_flat_text_weighted_base_5.npy"))
+r_audio = np.load(os.path.join(results_dir, "correlation_map_flat_audio_opensmile_base_5.npy"))
+
+
 delta_r = r_comb - np.maximum(r_text, r_audio)
 
 # ================================
@@ -170,7 +179,9 @@ print(df.to_string(index=False))
 print("="*110)
 
 # Save
-out_dir = "results_wholebrain_irosar/results_maps/pvalue_based"
+out_dir = os.path.join(results_dir, "results_maps")
+os.makedirs(out_dir, exist_ok=True)
+
 df.to_excel(f"{out_dir}/{OUTPUT_NAME}.xlsx", index=False)
 
 final_map = np.zeros_like(delta_r_3d)
@@ -182,4 +193,3 @@ print(f"\nResults saved:")
 print(f"   Table → {out_dir}/{OUTPUT_NAME}.xlsx")
 print(f"   Map   → {out_dir}/{OUTPUT_NAME}.nii")
 print(f"   Clusters: {len(valid_clusters)}")
-print("\nPerfect. Ready for publication.")
