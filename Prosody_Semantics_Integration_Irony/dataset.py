@@ -50,11 +50,18 @@ class WholeBrainDataset(Dataset):
         
 
     def apply_pca(self, embeddings_df, prefix):
-        """Apply PCA to embeddings."""
         embeddings_scaled = self.scaler.fit_transform(embeddings_df)
-        pca = PCA(n_components=self.pca_threshold)
+        
+        n_components = int(self.pca_threshold) if self.pca_threshold >= 1 else self.pca_threshold
+        
+        pca = PCA(n_components=n_components)
         embeddings_pca = pca.fit_transform(embeddings_scaled)
+        
+        actual_variance = np.sum(pca.explained_variance_ratio_)
+        print(f"{prefix}: {embeddings_pca.shape[1]} components → {actual_variance*100:.2f}% variance explained")
+        
         return pd.DataFrame(embeddings_pca, columns=[f"{prefix}_{i+1}" for i in range(embeddings_pca.shape[1])])
+    
 
     def process_participant(self, participant):
         """Process data for a single participant in parallel."""

@@ -99,15 +99,13 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
-    participant_list = participant_list[0:3] 
 
     icbm = datasets.fetch_icbm152_2009()
     mask_path = icbm['mask']
     # Load the mask as a Nifti image object
     mask = image.load_img(mask_path)
     
-    cd = os.getcwd()
-    exemple_data = nib.load(os.path.join(cd, "data/example_fmri/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz"))
+    exemple_data = nib.load("data/example_fmri/p01_irony_CNf1_2_SNnegh4_2_statement_masked.nii.gz")
     resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
 
     stim_df, resp, ids_list = analysis_helpers.load_dataset(args, paths, participant_list, resampled_mask)
