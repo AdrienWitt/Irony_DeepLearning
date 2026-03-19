@@ -29,6 +29,11 @@ results_dir = "results_wholebrain_irosar/normalized_time"
 # results_dir = "results_pca60"
 
 
+alphas = np.load(os.path.join(results_dir, "valphas_audio_opensmile_text_weighted_base.npy"))
+
+alphas.max()
+alphas.min()
+
 # ================================
 # 1. Load correlation maps
 # ================================
@@ -37,6 +42,8 @@ r_comb = np.load(os.path.join(results_dir, "correlation_map_flat_audio_opensmile
 r_text = np.load(os.path.join(results_dir, "correlation_map_flat_text_weighted_base_5.npy"))
 r_audio = np.load(os.path.join(results_dir, "correlation_map_flat_audio_opensmile_base_5.npy"))
 
+
+r_comb.max()
 
 delta_r = r_comb - np.maximum(r_text, r_audio)
 

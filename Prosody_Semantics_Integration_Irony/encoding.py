@@ -64,7 +64,7 @@ def parse_arguments():
                                help="Normalize response (fMRI) data before regression (default: True).")
     analysis_group.add_argument("--with_replacement", action="store_true",
                                help="Perform bootstrapping with replacement (default: False).")
-    analysis_group.add_argument("--results_dir", type=str, default=None,
+    analysis_group.add_argument("--results_dir", type=str, default="results",
                                help="Custom directory to save results (default: uses paths from analysis_helpers).")
 
 
@@ -99,6 +99,7 @@ def main():
 
     paths = analysis_helpers.get_paths()
     participant_list = os.listdir(paths["data_path"])
+    participant_list = participant_list[0:3] 
 
     icbm = datasets.fetch_icbm152_2009()
     mask_path = icbm['mask']
@@ -115,7 +116,7 @@ def main():
 
     # Handle precomputed alphas
     if not args.optimize_alpha:
-        valphas_path = os.path.join(paths["results_path"][args.data_type], "valphas_audio_opensmile_text_weighted_base.npy")
+        valphas_path = os.path.join(args.results_dir, "valphas_audio_opensmile_text_weighted_base.npy")
         if not os.path.exists(valphas_path):
             raise ValueError("Must provide a valid --precomputed_valphas path when --optimize_alpha is False.")
         valphas = np.load(valphas_path)
@@ -159,18 +160,17 @@ def main():
     feature_str = "_".join(features_used) if features_used else "nofeatures"
     
     # Set results directory
-    results_path = args.results_dir if args.results_dir else paths["results_path"]
-    os.makedirs(results_path, exist_ok=True)
+    os.makedirs(args.results_dir , exist_ok=True)
 
     
     # Save corrs (mean correlations across folds) in flattened space
-    np.save(os.path.join(results_path, f"correlation_map_flat_{feature_str}_{args.n_splits}.npy"), corrs)
-    np.save(os.path.join(results_path, f"folds_correlation_map_flat_{feature_str}_{args.n_splits}.npy"), fold_corrs)
-    ridge_logger.info(f"Saved flattened correlations to {results_path}/correlation_map_flat_{feature_str}.npy")
+    np.save(os.path.join(args.results_dir, f"correlation_map_flat_{feature_str}_{args.n_splits}.npy"), corrs)
+    np.save(os.path.join(args.results_dir, f"folds_correlation_map_flat_{feature_str}_{args.n_splits}.npy"), fold_corrs)
+    ridge_logger.info(f"Saved flattened correlations to {args.results_dir}/correlation_map_flat_{feature_str}.npy")
     
     # Save valphas
     if args.optimize_alpha:
-        result_file_valphas = os.path.join(results_path, f"valphas_{feature_str}.npy")
+        result_file_valphas = os.path.join(args.results_dir, f"valphas_{feature_str}.npy")
         np.save(result_file_valphas, valphas)
         ridge_logger.info(f"Saved valphas to {result_file_valphas}")
     
