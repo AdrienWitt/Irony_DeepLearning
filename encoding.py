@@ -16,16 +16,16 @@ import logging
 from ridge_cv import ridge_cv
 from nilearn import datasets, image
 
-args = argparse.Namespace(
-    use_audio = False,
-    use_text = False,
-    use_base_features=True,
-    use_text_weighted = True,
-    use_audio_opensmile = True,
-    include_tasks = ["irony", "sarcasm"],
-    optimize_alpha = True,
-    use_pca=False, num_jobs = 1, pca_threshold = 0.5, use_umap = False, data_type = 'normalized_time', 
-    alpha_min = 1, alpha_max = 6, num_alphas = 20)
+# args = argparse.Namespace(
+#     use_audio = False,
+#     use_text = False,
+#     use_base_features=True,
+#     use_text_weighted = True,
+#     use_audio_opensmile = True,
+#     include_tasks = ["irony", "sarcasm"],
+#     optimize_alpha = True,
+#     use_pca=False, num_jobs = 1, pca_threshold = 0.5, use_umap = False, data_type = 'normalized_time', 
+#     alpha_min = 1, alpha_max = 6, num_alphas = 20)
 
 
 # Configure logging

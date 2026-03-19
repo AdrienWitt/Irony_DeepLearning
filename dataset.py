@@ -299,7 +299,6 @@ class WholeBrainDataset(Dataset):
     def apply_pca(self, embeddings_df, prefix):
         embeddings_scaled = self.scaler.fit_transform(embeddings_df)
         
-        # Si >= 1 → nombre de composantes (int), sinon → seuil de variance (float)
         n_components = int(self.pca_threshold) if self.pca_threshold >= 1 else self.pca_threshold
         
         pca = PCA(n_components=n_components)
