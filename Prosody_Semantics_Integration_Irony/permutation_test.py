@@ -184,17 +184,17 @@ def main():
 
     # --- Load observed correlations and valphas ---
     r_comb_obs = np.load(
-        "results/correlation_map_flat_text_audio_base_5.npy"
+        f"{args.results_dir}/correlation_map_flat_text_audio_base_5.npy"
     )
     r_text_obs = np.load(
-        "results/correlation_map_flat_text_base_5.npy"
+        f"{args.results_dir}/correlation_map_flat_text_base_5.npy"
     )
     r_audio_obs = np.load(
-        "results/correlation_map_flat_audio_base_5.npy"
+        f"{args.results_dir}/correlation_map_flat_audio_base_5.npy"
     )
 
     valphas_path = os.path.join(
-        paths["results_path"],
+        args.results_dir,
         "valphas_text_audio_base.npy",
     )
     valphas = np.load(valphas_path)
