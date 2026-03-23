@@ -115,7 +115,7 @@ def main():
 
     # Handle precomputed alphas
     if not args.optimize_alpha:
-        valphas_path = os.path.join(args.results_dir, "valphas_audio_opensmile_text_weighted_base.npy")
+        valphas_path = os.path.join(args.results_dir, f"valphas_text_audio_base.npy")
         if not os.path.exists(valphas_path):
             raise ValueError("Must provide a valid --precomputed_valphas path when --optimize_alpha is False.")
         valphas = np.load(valphas_path)
