@@ -22,7 +22,7 @@ def parse_arguments():
     )
     parser.add_argument("--use_text", action="store_true")
     parser.add_argument("--use_audio", action="store_true")
-    parser.add_argument("--use_base", action="store_true")
+    parser.add_argument("--use_base_features", action="store_true")
     parser.add_argument("--use_pca", action="store_true")
     parser.add_argument("--pca_threshold", type=float, default=0.6)
     parser.add_argument("--include_tasks", type=str, nargs="+", default=["irony", "sarcasm"])
