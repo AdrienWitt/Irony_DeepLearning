@@ -26,18 +26,15 @@ delta_r = r_comb - np.maximum(r_text, r_audio)
 # ================================
 # 2. Load permutation results
 # ================================
-perm_file_candidates = [
-    "results/permutation_results/perm_stats_text_audio_base.npz",
-    "results/permutation_results/perm_stats_textweighted_opensmile_with_base.npz",
-    "results_wholebrain_irosar/normalized_time/permutation_results/perm_stats_text_audio_base.npz",
-    "results_wholebrain_irosar/normalized_time/permutation_results/perm_stats_textweighted_opensmile_with_base.npz",
-]
-perm_path = next((p for p in perm_file_candidates if os.path.exists(p)), None)
-if perm_path is None:
-    raise FileNotFoundError(
-        "Permutation stats file not found. Checked: " + ", ".join(perm_file_candidates)
-    )
-perm = np.load(perm_path)
+    
+import os
+print(os.path.getsize("results/permutation_results/perm_stats_text_audio_base.npz"))
+
+import zipfile
+with zipfile.ZipFile("results/permutation_results/perm_stats_text_audio_base.npz") as z:
+    print(z.namelist())
+
+perm = np.load("results/permutation_results/perm_stats_text_audio_base.npz")
 pvals_fdr = perm['pvals_fdr']
 reject_fdr = perm['reject']
 
