@@ -30,7 +30,7 @@ def parse_arguments():
                                help="Number of splits for cross-validation (default: number of participants for LOO CV).")
     parser.add_argument("--n_perms", type=int, default=1000)
     parser.add_argument("--random_seed", type=int, default=42)
-    parser.add_argument("--num_jobs", type=int, default=4)
+    parser.add_argument("--num_jobs", type=int, default=2)
     parser.add_argument("--corrmin", type=float, default=0.0)
     parser.add_argument("--normalpha", action="store_true", default=True)
     parser.add_argument("--use_corr", action="store_true", default=True)
@@ -69,7 +69,7 @@ def run_one_permutation(
 
     # --- Ridge CV on permuted data (same as observed models) ---
     _, corr_text, _, _, _ = ridge_cv(
-        stim_df=stim_perm[cols_text],   
+        stim_df=stim_perm[cols_text],
         resp=resp,
         alphas=None,
         participant_ids=ids_list,
@@ -82,7 +82,7 @@ def run_one_permutation(
         return_wt=False,
         normalize_stim=args.normalize_stim,
         normalize_resp=args.normalize_resp,
-        n_jobs=1,
+        n_jobs=-1,
         with_replacement=False,
         optimize_alpha=False,
         valphas=valphas,
@@ -90,7 +90,7 @@ def run_one_permutation(
     )
 
     _, corr_audio, _, _, _ = ridge_cv(
-        stim_df=stim_perm[cols_audio],   
+        stim_df=stim_perm[cols_audio],
         resp=resp,
         alphas=None,
         participant_ids=ids_list,
@@ -103,7 +103,7 @@ def run_one_permutation(
         return_wt=False,
         normalize_stim=args.normalize_stim,
         normalize_resp=args.normalize_resp,
-        n_jobs=1,
+        n_jobs=-1,
         with_replacement=False,
         optimize_alpha=False,
         valphas=valphas,
@@ -111,7 +111,7 @@ def run_one_permutation(
     )
 
     _, corr_comb, _, _, _ = ridge_cv(
-        stim_df=stim_perm[cols_combined],   
+        stim_df=stim_perm[cols_combined],
         resp=resp,
         alphas=None,
         participant_ids=ids_list,
@@ -124,7 +124,7 @@ def run_one_permutation(
         return_wt=False,
         normalize_stim=args.normalize_stim,
         normalize_resp=args.normalize_resp,
-        n_jobs=1,
+        n_jobs=-1,
         with_replacement=False,
         optimize_alpha=False,
         valphas=valphas,
