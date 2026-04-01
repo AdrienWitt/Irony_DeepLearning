@@ -30,7 +30,13 @@ def parse_arguments():
                                help="Number of splits for cross-validation (default: number of participants for LOO CV).")
     parser.add_argument("--n_perms", type=int, default=1000)
     parser.add_argument("--random_seed", type=int, default=42)
-    parser.add_argument("--num_jobs", type=int, default=2)
+    parser.add_argument("--num_jobs", type=int, default=7,
+                               help="Outer parallel jobs for permutations. "
+                                    "Suggested: 7 for model 3 (3 ridge_cv/perm), "
+                                    "14-21 for models 1 or 2 (1 ridge_cv/perm).")
+    parser.add_argument("--include_mod", type=str, nargs="+", default=["text", "audio", "text_audio"],
+                               choices=["text", "audio", "text_audio"],
+                               help="Modalities to include: 'text', 'audio', or 'text_audio'. Can specify multiple.")
     parser.add_argument("--corrmin", type=float, default=0.0)
     parser.add_argument("--normalpha", action="store_true", default=True)
     parser.add_argument("--use_corr", action="store_true", default=True)
@@ -61,15 +67,15 @@ def run_one_permutation(
     for pid in np.unique(ids_list):
         idx = np.where(ids_list == pid)[0]
 
-        perm_idx_text = rng.permutation(idx)
-        stim_perm.loc[idx, cols_text] = stim_perm.loc[perm_idx_text, cols_text].values
+        if "text" in args.include_mod:
+            perm_idx_text = rng.permutation(idx)
+            stim_perm.loc[idx, cols_text] = stim_perm.loc[perm_idx_text, cols_text].values
 
-        perm_idx_audio = rng.permutation(idx)
-        stim_perm.loc[idx, cols_audio] = stim_perm.loc[perm_idx_audio, cols_audio].values
+        if "audio" in args.include_mod:
+            perm_idx_audio = rng.permutation(idx)
+            stim_perm.loc[idx, cols_audio] = stim_perm.loc[perm_idx_audio, cols_audio].values
 
-    # --- Ridge CV on permuted data (same as observed models) ---
-    _, corr_text, _, _, _ = ridge_cv(
-        stim_df=stim_perm[cols_text],
+    _ridge_kwargs = dict(
         resp=resp,
         alphas=None,
         participant_ids=ids_list,
@@ -89,49 +95,33 @@ def run_one_permutation(
         logger=ridge_logger,
     )
 
-    _, corr_audio, _, _, _ = ridge_cv(
-        stim_df=stim_perm[cols_audio],
-        resp=resp,
-        alphas=None,
-        participant_ids=ids_list,
-        nboots=0,
-        n_splits=args.n_splits,
-        corrmin=args.corrmin,
-        singcutoff=1e-10,
-        normalpha=args.normalpha,
-        use_corr=args.use_corr,
-        return_wt=False,
-        normalize_stim=args.normalize_stim,
-        normalize_resp=args.normalize_resp,
-        n_jobs=-1,
-        with_replacement=False,
-        optimize_alpha=False,
-        valphas=valphas,
-        logger=ridge_logger,
-    )
+    # --- Ridge CV on permuted data (only the needed modalities) ---
+    results = {}
+    
+    if "text" in args.include_mod:
+        _, corr_text, _, _, _ = ridge_cv(stim_df=stim_perm[cols_text], **_ridge_kwargs)
+        results["text"] = corr_text
 
-    _, corr_comb, _, _, _ = ridge_cv(
-        stim_df=stim_perm[cols_combined],
-        resp=resp,
-        alphas=None,
-        participant_ids=ids_list,
-        nboots=0,
-        n_splits=args.n_splits,
-        corrmin=args.corrmin,
-        singcutoff=1e-10,
-        normalpha=args.normalpha,
-        use_corr=args.use_corr,
-        return_wt=False,
-        normalize_stim=args.normalize_stim,
-        normalize_resp=args.normalize_resp,
-        n_jobs=-1,
-        with_replacement=False,
-        optimize_alpha=False,
-        valphas=valphas,
-        logger=ridge_logger,
-    )
+    if "audio" in args.include_mod:
+        _, corr_audio, _, _, _ = ridge_cv(stim_df=stim_perm[cols_audio], **_ridge_kwargs)
+        results["audio"] = corr_audio
 
-    return corr_comb - np.maximum(corr_text, corr_audio)
+    if "text_audio" in args.include_mod:
+        _, corr_comb, _, _, _ = ridge_cv(stim_df=stim_perm[cols_combined], **_ridge_kwargs)
+        results["text_audio"] = corr_comb
+
+    # Return results based on requested modalities
+    # If only one modality requested, return it directly
+    if len(args.include_mod) == 1:
+        return results[args.include_mod[0]]
+    # If multiple modalities, compute comparison between combined and best single
+    else:
+        if "text_audio" in args.include_mod:
+            best_single = np.maximum(results.get("text", -np.inf), results.get("audio", -np.inf))
+            return results["text_audio"] - best_single
+        else:
+            # If only text and audio requested, return their difference
+            return results.get("audio", results.get("text")) - results.get("text", results.get("audio"))
 
 
 # ----------------------------------------------------------------------
@@ -182,25 +172,29 @@ def main():
         f"(emb: {len(cols_audio_emb)}, base: {len(cols_audio_base)})"
     )
 
+    logger.info(f"Running with modalities: {', '.join(args.include_mod)}")
+    logger.info(f"Suggested --num_jobs: 7 (3 modalities) or 14-21 (1-2 modalities). Currently: {args.num_jobs}")
+
     # --- Load observed correlations and valphas ---
-    r_comb_obs = np.load(
-        f"{args.results_dir}/correlation_map_flat_text_audio_base_5.npy"
-    )
-    r_text_obs = np.load(
-        f"{args.results_dir}/correlation_map_flat_text_base_5.npy"
-    )
-    r_audio_obs = np.load(
-        f"{args.results_dir}/correlation_map_flat_audio_base_5.npy"
-    )
+    valphas_dict = {}
+    r_obs_dict = {}
+    
+    if "text" in args.include_mod:
+        r_obs_dict["text"] = np.load(f"{args.results_dir}/correlation_map_flat_text_base_5.npy")
+        valphas_dict["text"] = np.load(os.path.join(args.results_dir, "valphas_text_base.npy"))
+    if "audio" in args.include_mod:
+        r_obs_dict["audio"] = np.load(f"{args.results_dir}/correlation_map_flat_audio_base_5.npy")
+        valphas_dict["audio"] = np.load(os.path.join(args.results_dir, "valphas_audio_base.npy"))
+    if "text_audio" in args.include_mod:
+        r_obs_dict["text_audio"] = np.load(f"{args.results_dir}/correlation_map_flat_text_audio_base_5.npy")
+        valphas_dict["text_audio"] = np.load(os.path.join(args.results_dir, "valphas_text_audio_base.npy"))
+    
+    # Use the first loaded valphas for permutation test
+    valphas = next(iter(valphas_dict.values()))
+    # For output, use first modality as primary
+    r_obs = next(iter(r_obs_dict.values()))
 
-    valphas_path = os.path.join(
-        args.results_dir,
-        "valphas_text_audio_base.npy",
-    )
-    valphas = np.load(valphas_path)
-
-    delta_obs = r_comb_obs - np.maximum(r_text_obs, r_audio_obs)
-    logger.info(f"Loaded observed Δr for {delta_obs.shape[0]} voxels.")
+    logger.info(f"Loaded observed scores for {r_obs.shape[0]} voxels.")
 
     # --- Run permutations ---
     rng = np.random.RandomState(args.random_seed)
@@ -218,7 +212,7 @@ def main():
     logger.info(f"Completed {args.n_perms} permutations.")
 
     # --- p-values + FDR ---
-    pvals = (np.sum(delta_perm >= delta_obs[np.newaxis, :], axis=0) + 1) / (args.n_perms + 1)
+    pvals = (np.sum(delta_perm >= r_obs[np.newaxis, :], axis=0) + 1) / (args.n_perms + 1)
     reject, pvals_fdr, _, _ = multipletests(pvals, alpha=0.05, method="fdr_bh")
     logger.info(f"Significant voxels (FDR < 0.05): {np.sum(reject)}")
 
@@ -227,16 +221,17 @@ def main():
     perm_dir = os.path.join(results_path, "permutation_results")
     os.makedirs(perm_dir, exist_ok=True)
 
-    out_file = os.path.join(perm_dir, "perm_stats_text_audio_base.npz")
+    model_tag = "_".join(sorted(args.include_mod))
+    out_file = os.path.join(perm_dir, f"perm_stats_{model_tag}_base.npz")
 
     np.savez(
         out_file,
-        delta_obs=delta_obs,
+        r_obs=r_obs,
         delta_perm=delta_perm,
         pvals=pvals,
         pvals_fdr=pvals_fdr,
         reject=reject
-)
+    )
 
 
 if __name__ == "__main__":
