@@ -175,19 +175,15 @@ def main():
     logger.info(f"Running with modalities: {', '.join(args.include_mod)}")
     logger.info(f"Suggested --num_jobs: 7 (3 modalities) or 14-21 (1-2 modalities). Currently: {args.num_jobs}")
 
-    # --- Load observed correlations and valphas ---
-    valphas_dict = {}
+    # --- Load observed correlations ---
     r_obs_dict = {}
     
     if "text" in args.include_mod:
         r_obs_dict["text"] = np.load(f"{args.results_dir}/correlation_map_flat_text_base_5.npy")
-        valphas_dict["text"] = np.load(os.path.join(args.results_dir, "valphas_text_base.npy"))
     if "audio" in args.include_mod:
         r_obs_dict["audio"] = np.load(f"{args.results_dir}/correlation_map_flat_audio_base_5.npy")
-        valphas_dict["audio"] = np.load(os.path.join(args.results_dir, "valphas_audio_base.npy"))
     if "text_audio" in args.include_mod:
         r_obs_dict["text_audio"] = np.load(f"{args.results_dir}/correlation_map_flat_text_audio_base_5.npy")
-        valphas_dict["text_audio"] = np.load(os.path.join(args.results_dir, "valphas_text_audio_base.npy"))
     
     # Always use the text_audio model valphas for permutation test
     valphas_path = os.path.join(args.results_dir,
