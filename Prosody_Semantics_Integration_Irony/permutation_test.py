@@ -189,8 +189,12 @@ def main():
         r_obs_dict["text_audio"] = np.load(f"{args.results_dir}/correlation_map_flat_text_audio_base_5.npy")
         valphas_dict["text_audio"] = np.load(os.path.join(args.results_dir, "valphas_text_audio_base.npy"))
     
-    # Use the first loaded valphas for permutation test
-    valphas = next(iter(valphas_dict.values()))
+    # Always use the text_audio model valphas for permutation test
+    valphas_path = os.path.join(args.results_dir,
+        "valphas_text_audio_base.npy",
+    )
+    valphas = np.load(valphas_path)
+
     # For output, use first modality as primary
     r_obs = next(iter(r_obs_dict.values()))
 
