@@ -8,7 +8,6 @@ import nibabel as nib
 from nilearn import datasets, image
 from nilearn.image import resample_to_img
 from joblib import Parallel, delayed
-from statsmodels.stats.multitest import multipletests
 
 import analysis_helpers
 from ridge_cv import ridge_cv
@@ -47,7 +46,7 @@ def parse_arguments():
 
 
 # ----------------------------------------------------------------------
-# One permutation: permute modality blocks (with base features) independently
+# One permutation: permute modality blocks independently per participant
 # ----------------------------------------------------------------------
 def run_one_permutation(
     stim_df: pd.DataFrame,
@@ -97,7 +96,7 @@ def run_one_permutation(
 
     # --- Ridge CV on permuted data (only the needed modalities) ---
     results = {}
-    
+
     if "text" in args.include_mod:
         _, corr_text, _, _, _ = ridge_cv(stim_df=stim_perm[cols_text], **_ridge_kwargs)
         results["text"] = corr_text
@@ -110,18 +109,7 @@ def run_one_permutation(
         _, corr_comb, _, _, _ = ridge_cv(stim_df=stim_perm[cols_combined], **_ridge_kwargs)
         results["text_audio"] = corr_comb
 
-    # Return results based on requested modalities
-    # If only one modality requested, return it directly
-    if len(args.include_mod) == 1:
-        return results[args.include_mod[0]]
-    # If multiple modalities, compute comparison between combined and best single
-    else:
-        if "text_audio" in args.include_mod:
-            best_single = np.maximum(results.get("text", -np.inf), results.get("audio", -np.inf))
-            return results["text_audio"] - best_single
-        else:
-            # If only text and audio requested, return their difference
-            return results.get("audio", results.get("text")) - results.get("text", results.get("audio"))
+    return results
 
 
 # ----------------------------------------------------------------------
@@ -152,13 +140,9 @@ def main():
         args, paths, participant_list, resampled_mask
     )
 
- 
     cols_text_emb = [c for c in stim_df.columns if c.startswith(("emb_weighted_", "pc_weighted_"))]
-
     cols_text_base = [c for c in stim_df.columns if c.startswith(("context_", "semantic_"))]
-
     cols_audio_emb = [c for c in stim_df.columns if c.startswith(("emb_audio_opensmile_", "pc_audio_opensmile_"))]
-
     cols_audio_base = [c for c in stim_df.columns if c.startswith("prosody_")]
 
     cols_text = cols_text_emb + cols_text_base
@@ -171,30 +155,11 @@ def main():
         f"Audio model: {len(cols_audio)} features "
         f"(emb: {len(cols_audio_emb)}, base: {len(cols_audio_base)})"
     )
-
     logger.info(f"Running with modalities: {', '.join(args.include_mod)}")
     logger.info(f"Suggested --num_jobs: 7 (3 modalities) or 14-21 (1-2 modalities). Currently: {args.num_jobs}")
 
-    # --- Load observed correlations ---
-    r_obs_dict = {}
-    
-    if "text" in args.include_mod:
-        r_obs_dict["text"] = np.load(f"{args.results_dir}/correlation_map_flat_text_base_5.npy")
-    if "audio" in args.include_mod:
-        r_obs_dict["audio"] = np.load(f"{args.results_dir}/correlation_map_flat_audio_base_5.npy")
-    if "text_audio" in args.include_mod:
-        r_obs_dict["text_audio"] = np.load(f"{args.results_dir}/correlation_map_flat_text_audio_base_5.npy")
-    
-    # Always use the text_audio model valphas for permutation test
-    valphas_path = os.path.join(args.results_dir,
-        "valphas_text_audio_base.npy",
-    )
-    valphas = np.load(valphas_path)
-
-    # For output, use first modality as primary
-    r_obs = next(iter(r_obs_dict.values()))
-
-    logger.info(f"Loaded observed scores for {r_obs.shape[0]} voxels.")
+    # --- Load valphas ---
+    valphas = np.load(os.path.join(args.results_dir, "valphas_text_audio_base.npy"))
 
     # --- Run permutations ---
     rng = np.random.RandomState(args.random_seed)
@@ -208,30 +173,25 @@ def main():
         )
         for seed in seeds
     )
-    delta_perm = np.vstack(perm_results)
+
+    # Restructure: list of dicts -> dict of (n_perms, n_voxels) arrays
+    perm_scores = {
+        mod: np.vstack([r[mod] for r in perm_results])
+        for mod in args.include_mod
+    }
     logger.info(f"Completed {args.n_perms} permutations.")
 
-    # --- p-values + FDR ---
-    pvals = (np.sum(delta_perm >= r_obs[np.newaxis, :], axis=0) + 1) / (args.n_perms + 1)
-    reject, pvals_fdr, _, _ = multipletests(pvals, alpha=0.05, method="fdr_bh")
-    logger.info(f"Significant voxels (FDR < 0.05): {np.sum(reject)}")
-
-    # --- Save ---
+    # --- Save one .npy per modality ---
     results_path = args.results_dir if args.results_dir else paths["results_path"]
     perm_dir = os.path.join(results_path, "permutation_results")
     os.makedirs(perm_dir, exist_ok=True)
 
-    model_tag = "_".join(sorted(args.include_mod))
-    out_file = os.path.join(perm_dir, f"perm_stats_{model_tag}_base.npz")
+    for mod in args.include_mod:
+        out_file = os.path.join(perm_dir, f"perm_scores_{mod}_base.npy")
+        np.save(out_file, perm_scores[mod])
+        logger.info(f"Saved {out_file} — shape {perm_scores[mod].shape}")
 
-    np.savez(
-        out_file,
-        r_obs=r_obs,
-        delta_perm=delta_perm,
-        pvals=pvals,
-        pvals_fdr=pvals_fdr,
-        reject=reject
-    )
+    logger.info(f"Total time: {(time.time() - start_time) / 60:.1f} min")
 
 
 if __name__ == "__main__":
